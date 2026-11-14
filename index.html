@@ -290,7 +290,7 @@ select {
 
 /* Figure */
 .fig { color: var(--fg); display: flex; justify-content: center; }
-.fig svg { display: block; width: 100%; height: 100%; max-width: 100%; }
+.fig svg, .fig canvas { display: block; width: 100%; height: 100%; max-width: 100%; }
 .fig-start { height: 11rem; margin: 0.25rem 0 0.5rem; }
 .fig-set { height: clamp(9.5rem, 27vh, 15rem); }
 .fig-next { height: clamp(8rem, 21vh, 12rem); }
@@ -418,6 +418,728 @@ body[data-phase="work"] .swap { color: var(--fg); }
 </div>
 <p id="live" class="sr-only" aria-live="polite"></p>
 
+<script>
+// 3D exercise avatars (v2): ray-marched in one WebGL2 shader, no libraries or model files.
+// Bodies are sculpted from smooth-blended shapes grouped per body part (torso, legs, head, arms, props);
+// each part has a bounding sphere so the shader only evaluates the parts near each ray.
+// Poses reuse the app's 2D side-view pose data and are solved in 3D with two-bone IK.
+const AV3D = (() => {
+  "use strict";
+
+  // ---------- vector helpers ----------
+  const add = (a, b) => [a[0] + b[0], a[1] + b[1], a[2] + b[2]];
+  const sub = (a, b) => [a[0] - b[0], a[1] - b[1], a[2] - b[2]];
+  const mul = (a, s) => [a[0] * s, a[1] * s, a[2] * s];
+  const dot = (a, b) => a[0] * b[0] + a[1] * b[1] + a[2] * b[2];
+  const cross = (a, b) => [a[1] * b[2] - a[2] * b[1], a[2] * b[0] - a[0] * b[2], a[0] * b[1] - a[1] * b[0]];
+  const len = (a) => Math.hypot(a[0], a[1], a[2]);
+  const norm = (a) => { const l = len(a) || 1; return [a[0] / l, a[1] / l, a[2] / l]; };
+  const mix = (a, b, t) => [a[0] + (b[0] - a[0]) * t, a[1] + (b[1] - a[1]) * t, a[2] + (b[2] - a[2]) * t];
+  const sum = (...v) => v.reduce((a, b) => add(a, b));
+  const lerp = (a, b, k) => a + (b - a) * k;
+  const clamp = (x, a, b) => Math.min(b, Math.max(a, x));
+  const lerpAng = (a, b, k) => a + ((((b - a) % 360) + 540) % 360 - 180) * k;
+  const rad = (a) => a * Math.PI / 180;
+  const rotY = (v, a) => { const c = Math.cos(a), s = Math.sin(a); return [v[0] * c + v[2] * s, v[1], -v[0] * s + v[2] * c]; };
+  const perp = (v, axis) => norm(sub(v, mul(axis, dot(v, axis))));
+
+  // ---------- materials ----------
+  const MAT = { skin: 0, hair: 1, top: 2, bottom: 3, shoe: 4, sole: 5, sock: 6, eye: 7, dbHead: 8, metal: 9, pad: 10, frame: 11 };
+  const PALETTE = {
+    skin: "#D29C78", hairM: "#2E2119", hairF: "#5C3A26", top: "#F0643F", bottom: "#252A3B",
+    shoe: "#F3F2EE", sole: "#3B4050", sock: "#F3F2EE", sclera: "#EEEAE4",
+    dbHead: "#2E323B", metal: "#AEB4BD", pad: "#2A2D35", frame: "#8E95A0",
+    lipM: "#B4705E", lipF: "#BF6A66", browM: "#271C15", browF: "#43291B", irisM: "#4B3222", irisF: "#5E4329"
+  };
+  const hex = (h) => [1, 3, 5].map((i) => Math.pow(parseInt(h.substr(i, 2), 16) / 255, 2.2));
+
+  // ---------- body specs (metres) ----------
+  const SPEC = {
+    m: { s: 0.0113, shW: 0.172, hipW: 0.088, hs: 1.03, ankH: 0.075, out: 1, delt: 0.044, neck: [0.058, 0.052], trap: [0.044, 0.03] },
+    f: { s: 0.0105, shW: 0.158, hipW: 0.086, hs: 0.985, ankH: 0.07, out: 0.85, delt: 0.037, neck: [0.048, 0.044], trap: [0.034, 0.024] }
+  };
+
+  // ---------- poses: the page's 2D pose data plus 3D extras ----------
+  const sh = (x, y, b) => ({ to: "sh", p: [x, y], b: b == null ? 1 : b });
+  let ANIM = {
+    stand: { tempo: [1, 1], db: [], p: [
+      { hip: [120, 81], torso: -90, n: [121, 154, 7], f: [119, 154, 7], an: sh(-1, 53.5), af: sh(-1, 53.5) },
+      { hip: [120, 81], torso: -90, n: [121, 154, 7], f: [119, 154, 7], an: sh(-1, 53.5), af: sh(-1, 53.5) }] }
+  };
+  // grip: "fwd" = neutral (palms in), "lat" = overhand. out = hands away from the body. side = lying on the side facing the camera.
+  const X3 = {
+    stand: { grip: "fwd", out: 0.06, turn: 9 },
+    split: { grip: "fwd", out: 0.03 }, row1: { grip: "fwd", out: 0.02, absZ: 0.07 }, rdl: { grip: "lat", out: 0 },
+    bench: { grip: "lat", out: 0.05 }, plank: { side: true, lift: 0.16 }, calf: { grip: "fwd", out: 0.03 },
+    step: { grip: "fwd", out: 0.03 }, incline: { grip: "lat", out: 0.05 }, slrdl: { grip: "fwd", out: 0.01 },
+    row2: { grip: "fwd", out: 0.0 }, thrust: { dbHips: true }, march: { grip: "fwd", out: 0.03 }
+  };
+  function setAnim(a) { ANIM = Object.assign({}, a, { stand: ANIM.stand }); frames.clear(); }
+
+  // ---------- IK ----------
+  function ik3(R, T, l1, l2, pole) {
+    const d = sub(T, R), d0 = len(d) || 1e-4;
+    const dist = Math.min(l1 + l2 - 1e-3, Math.max(Math.abs(l1 - l2) + 1e-3, d0));
+    const u = mul(d, 1 / d0);
+    const a = (l1 * l1 - l2 * l2 + dist * dist) / (2 * dist), h = Math.sqrt(Math.max(0, l1 * l1 - a * a));
+    let p = sub(pole, mul(u, dot(pole, u)));
+    p = len(p) < 1e-5 ? [0, 1, 0] : norm(p);
+    return { mid: add(add(R, mul(u, a)), mul(p, h)), end: add(R, mul(u, dist)), pole: p };
+  }
+  function pole2D(R, T, bend) {
+    const dx = T[0] - R[0], dyDown = -(T[1] - R[1]), l = Math.hypot(dx, dyDown) || 1;
+    return [-(dyDown / l) * bend, -(dx / l) * bend, 0];
+  }
+
+  // ---------- skeleton from a pose ----------
+  function skeleton(key, k, sex) {
+    const A = ANIM[key], X = X3[key] || {}, P0 = A.p[0], P1 = A.p[1], S = SPEC[sex], s = S.s, sc = s / 0.0113;
+    const M = (p, z) => [(p[0] - 120) * s, (158 - p[1]) * s, z];
+    const hip2 = [lerp(P0.hip[0], P1.hip[0], k), lerp(P0.hip[1], P1.hip[1], k)];
+    const ta = rad(lerpAng(P0.torso, P1.torso, k));
+    const u = norm([Math.cos(ta), -Math.sin(ta), 0]);
+    let l = [0, 0, 1], f = cross(u, l);
+    if (X.side) { l = u[0] <= 0 ? [-u[1], u[0], 0] : [u[1], -u[0], 0]; if (l[1] < 0) l = mul(l, -1); f = [0, 0, 1]; }
+    const hipC = add(M(hip2, 0), [0, X.lift || 0, 0]), neckB = add(hipC, mul(u, 52 * s));
+    const pitch = rad(7);
+    const hu = norm(add(mul(u, Math.cos(pitch)), mul(f, Math.sin(pitch)))), hf = norm(sub(mul(f, Math.cos(pitch)), mul(u, Math.sin(pitch))));
+    const sk = { key: key, u: u, f: f, r: l, hu: hu, hf: hf, hipC: hipC, neckB: neckB, sex: sex, legs: [], arms: [], props: [], side: !!X.side };
+    sk.headC = add(add(neckB, mul(u, 14.6 * s)), mul(f, 0.018));
+    const supports = [158].concat((A.bench || []).filter((b) => b[0] === "r").map((b) => b[2]));
+    const raise = S.ankH - 4 * s, thL = 38 * s, shL = 36 * s - raise, fs = sex === "m" ? 1 : 0.88;
+    ["n", "f"].forEach((side, i) => {
+      const sg = i === 0 ? 1 : -1;
+      const a = P0[side], b = P1[side];
+      const ank2 = [lerp(a[0], b[0], k), lerp(a[1], b[1], k)];
+      const fa = lerpAng(a[2], b[2], k), fa0 = ((fa % 360) + 540) % 360 - 180;
+      const hipJ = add(hipC, mul(l, sg * S.hipW));
+      let ank, fd, pole;
+      if (X.side) {
+        ank = add(M(ank2, 0), [0, 0.012, 0]); if (sg > 0) ank = add(ank, mul(l, 0.04));
+        fd = f; pole = f;
+      } else {
+        ank = M(ank2, sg * S.hipW); fd = norm([Math.cos(rad(fa)), -Math.sin(rad(fa)), 0]);
+        // planted feet: flat on the floor or bench (wf), or up on the toes (wt)
+        let wf = 0, sy = 158, wt = 0, syT = 158;
+        supports.forEach((y) => { const w = 1 - clamp((Math.abs(y - (ank2[1] + 4)) - 1) / 4, 0, 1); if (w > wf) { wf = w; sy = y; } });
+        wf *= 1 - clamp((Math.abs(fa0) - 8) / 10, 0, 1);
+        if (Math.abs(fa0) < 80) {
+          const toeY = ank2[1] + 12 * Math.sin(rad(fa));
+          supports.forEach((y) => { const w = 1 - clamp((Math.abs(y - 4 - toeY) - 1) / 4, 0, 1); if (w > wt) { wt = w; syT = y; } });
+        }
+        const w = Math.max(wf, wt);
+        if (w > 0) {
+          if (wf > 0) fd = norm(mix(fd, [Math.sign(fd[0]) || 1, 0, 0], wf));
+          const up = fd[0] >= 0 ? [-fd[1], fd[0], 0] : [fd[1], -fd[0], 0];
+          const supY = (158 - (wf >= wt ? sy : syT)) * s;
+          ank[1] = lerp(ank[1], supY - fd[1] * 0.2 * fs + up[1] * S.ankH, w);
+        }
+        if (X.turn) fd = rotY(fd, rad(-sg * X.turn) * (fd[0] >= 0 ? 1 : -1));
+        pole = pole2D(hipJ, ank, -1);
+      }
+      const legIK = ik3(hipJ, ank, thL, shL, pole);
+      sk.legs.push({ hip: hipJ, knee: legIK.mid, ank: legIK.end, fd: fd, front: legIK.pole, sg: sg });
+      // arms
+      const ap = P0["a" + side], bp = P1["a" + side];
+      const sj = add(add(neckB, mul(u, -0.055 * sc)), mul(l, sg * S.shW));
+      const tp = [lerp(ap.p[0], bp.p[0], k) * s, -lerp(ap.p[1], bp.p[1], k) * s, 0];
+      let T, apole, to = ap.to;
+      if (X.dbHips) to = "dbh";
+      else if (X.side && ap.to === "abs") to = "fore";
+      if (to === "sh") { T = add(add(sj, tp), mul(l, sg * (X.out || 0) * S.out)); apole = add(pole2D(sj, T, ap.b), mul(l, sg * 0.25)); }
+      else if (to === "hip") { T = X.side ? sum(hipC, mul(l, S.hipW + 0.1), mul(u, 0.03), mul(f, 0.03)) : add(add(hipC, tp), mul(l, sg * (S.hipW + 0.075))); apole = X.side ? add(mul(f, -1), mul(l, 0.6)) : add(pole2D(sj, T, ap.b), mul(l, sg * 0.25)); }
+      else if (to === "fore") { T = [sj[0] + 0.02, 0.035, sj[2] + 0.28 * sc]; apole = [0, -1, -0.15]; }
+      else if (to === "dbh") { const dbc = sum(hipC, mul(f, 0.16 * sc), mul(u, 0.03)); T = sum(dbc, mul(l, sg * 0.092), mul(f, 0.035)); apole = add(mul(l, sg), mul(u, 0.4)); if (sg > 0) sk.props.push({ t: "db", c: dbc, ax: l }); }
+      else { T = M(ap.p.map((v, j) => lerp(v, bp.p[j], k)), sg * (X.absZ != null ? X.absZ : S.shW)); apole = add(pole2D(sj, T, ap.b), mul(l, sg * 0.25)); }
+      const uaL = 0.296 * sc, faL = 0.314 * sc;
+      const armIK = ik3(sj, T, uaL, faL, apole);
+      const fdir = norm(sub(armIK.end, armIK.mid));
+      const holding = !X.dbHips && (A.db || []).includes(side);
+      let tref = to === "fore" ? u : (to === "abs" || to === "dbh" || X.grip === "lat") ? mul(l, -sg) : f;
+      let thumb = sub(tref, mul(fdir, dot(tref, fdir)));
+      if (len(thumb) < 0.25) { tref = Math.abs(dot(u, fdir)) < 0.9 ? u : [0, 1, 0]; thumb = sub(tref, mul(fdir, dot(tref, fdir))); }
+      thumb = norm(thumb);
+      const palm = mul(norm(cross(thumb, fdir)), sg);
+      sk.arms.push({ sh: sj, elb: armIK.mid, grip: armIK.end, wrist: sub(armIK.end, mul(fdir, 0.068 * sc)), fdir: fdir, pole: armIK.pole,
+                     thumb: thumb, palm: palm, holding: holding, sg: sg, side: side });
+      if (holding) sk.props.push({ t: "db", c: armIK.end, ax: thumb });
+    });
+    (A.bench || []).forEach((b) => {
+      if (b[0] === "r") sk.props.push({ t: "pad", a: M([b[1], b[2] + b[4] / 2], 0), b: M([b[1] + b[3], b[2] + b[4] / 2], 0), h: b[4] / 2 * s });
+      else sk.props.push({ t: b[5] >= 8 ? "padline" : "leg", a: M([b[1], b[2]], 0), b: M([b[3], b[4]], 0), w: b[5] * s });
+    });
+    return sk;
+  }
+
+  // ---------- body builder ----------
+  function build(sk) {
+    const S = SPEC[sk.sex], male = sk.sex === "m", sc = S.s / 0.0113, hs = S.hs;
+    const { u, f, r, hu, hf } = sk;
+    const SKIN = MAT.skin, TOP = MAT.top, BOT = MAT.bottom, HAIR = MAT.hair;
+    const groups = []; let cur = null;
+    const group = (k, prop) => { cur = { k: k, prop: !!prop, rows: [], mn: [1e9, 1e9, 1e9], mx: [-1e9, -1e9, -1e9] }; groups.push(cur); };
+    const ext = (c, e) => { for (let j = 0; j < 3; j++) { cur.mn[j] = Math.min(cur.mn[j], c[j] - e); cur.mx[j] = Math.max(cur.mx[j], c[j] + e); } };
+    const ell = (c, X, Y, Z, rx, ry, rz, mat, k, flag) => {
+      cur.rows.push([c[0], c[1], c[2], 1, X[0] / rx, X[1] / rx, X[2] / rx, mat, Y[0] / ry, Y[1] / ry, Y[2] / ry, k || 0, Z[0] / rz, Z[1] / rz, Z[2] / rz, flag || 0, 0, 0, 0, 0]);
+      ext(c, Math.max(rx, ry, rz));
+    };
+    const sph = (c, rr, mat, k, flag) => ell(c, [1, 0, 0], [0, 1, 0], [0, 0, 1], rr, rr, rr, mat, k, flag);
+    const cone = (a, b, r1, r2, mat, k) => {
+      if (len(sub(b, a)) <= Math.abs(r1 - r2) + 2e-4) { sph(r1 > r2 ? a : b, Math.max(r1, r2), mat, k); return; }
+      cur.rows.push([a[0], a[1], a[2], 0, b[0], b[1], b[2], mat, r1, r2, 0, k || 0, 0, 0, 0, 0, 0, 0, 0, 0]);
+      ext(a, r1); ext(b, r2);
+    };
+    const cutEll = (c, X, Y, Z, rx, ry, rz, mat, k, n, off) => {
+      cur.rows.push([c[0], c[1], c[2], 2, X[0] / rx, X[1] / rx, X[2] / rx, mat, Y[0] / ry, Y[1] / ry, Y[2] / ry, k || 0, Z[0] / rz, Z[1] / rz, Z[2] / rz, 0, n[0], n[1], n[2], off]);
+      ext(c, Math.max(rx, ry, rz));
+    };
+    const box = (c, X, Y, Z, hx, hy, hz, rnd, mat) => { cur.rows.push([c[0], c[1], c[2], 3, X[0], X[1], X[2], mat, Y[0], Y[1], Y[2], 0, Z[0], Z[1], Z[2], 0, hx, hy, hz, rnd]); ext(c, hx + hy + hz); };
+    const cyl = (a, b, rr, rnd, mat) => { cur.rows.push([a[0], a[1], a[2], 4, b[0], b[1], b[2], mat, rr, rnd, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0]); ext(a, rr); ext(b, rr); };
+    const hexp = (c, axis, pp, ap, hl, rnd, mat) => { cur.rows.push([c[0], c[1], c[2], 5, axis[0], axis[1], axis[2], mat, pp[0], pp[1], pp[2], 0, 0, 0, 0, 0, ap, hl, rnd, 0]); ext(c, ap * 1.16 + hl); };
+    // oriented ellipsoid along a bone direction
+    const boneEll = (c, along, side, rs, ra, rf, mat, k) => { const Y = norm(along), X = perp(side, Y), Z = cross(X, Y); ell(c, X, Y, Z, rs, ra, rf, mat, k); };
+
+    // torso local frame: x = side, y = up the spine (scaled), z = forward
+    const TL = (x, y, z) => sum(sk.hipC, mul(r, x), mul(u, y * sc), mul(f, z));
+    const tE = (d, mat, k, pair) => [1, -1].forEach((sg) => { if (sg < 0 && !pair) return; ell(TL(sg * d[0], d[1], d[2]), r, u, f, d[3], d[4], d[5], mat, k); });
+
+    // ===== torso (pelvis, trunk, neck, shoulders) =====
+    group(0);
+    if (male) {
+      tE([0, 0.045, -0.005, 0.158, 0.105, 0.1], BOT, 0.04);
+      tE([0.104, 0.0, 0.0, 0.07, 0.085, 0.085], BOT, 0.05, true);
+      tE([0.068, 0.0, -0.058, 0.082, 0.092, 0.07], BOT, 0.04, true);
+      tE([0, -0.06, 0.0, 0.055, 0.04, 0.065], BOT, 0.04);
+      tE([0, 0.19, 0.0, 0.15, 0.1, 0.098], TOP, 0.05);
+      tE([0, 0.205, 0.04, 0.105, 0.11, 0.066], TOP, 0.05);
+      tE([0, 0.35, 0.0, 0.158, 0.15, 0.106], TOP, 0.05);
+      tE([0.098, 0.34, -0.03, 0.07, 0.12, 0.068], TOP, 0.05, true);
+      tE([0.064, 0.405, 0.066, 0.07, 0.05, 0.04], TOP, 0.04, true);
+      tE([0, 0.47, 0.0, 0.14, 0.075, 0.085], TOP, 0.04);
+      tE([0.085, 0.43, -0.076, 0.058, 0.07, 0.035], TOP, 0.05, true);
+      tE([0, 0.1, 0.002, 0.152, 0.064, 0.104], TOP, 0.008);
+    } else {
+      tE([0, 0.035, -0.012, 0.168, 0.112, 0.105], BOT, 0.04);
+      tE([0.11, -0.005, -0.005, 0.074, 0.09, 0.085], BOT, 0.05, true);
+      tE([0.072, -0.008, -0.066, 0.088, 0.098, 0.078], BOT, 0.04, true);
+      tE([0, -0.065, 0.0, 0.055, 0.04, 0.062], BOT, 0.04);
+      tE([0, 0.2, 0.0, 0.122, 0.095, 0.088], TOP, 0.05);
+      tE([0, 0.185, 0.034, 0.09, 0.1, 0.058], TOP, 0.05);
+      tE([0, 0.345, 0.0, 0.14, 0.135, 0.097], TOP, 0.05);
+      tE([0.058, 0.37, 0.062, 0.062, 0.058, 0.05], TOP, 0.05, true);
+      tE([0, 0.46, -0.005, 0.125, 0.07, 0.078], SKIN, 0.04);
+      tE([0.075, 0.42, -0.072, 0.05, 0.06, 0.03], TOP, 0.05, true);
+    }
+    [1, -1].forEach((sg) => cone(TL(0, 0.556, -0.024), TL(sg * (S.shW - 0.03), 0.512, -0.016), S.trap[0], S.trap[1], male ? TOP : SKIN, 0.04));
+    [1, -1].forEach((sg) => cone(TL(sg * 0.07, 0.49, 0.0), TL(sg * (S.shW - 0.015), 0.5, 0.0), S.delt * 0.88, S.delt * 0.8, male ? TOP : SKIN, 0.07));
+    sk.arms.forEach((a) => {
+      const ad = norm(sub(a.elb, a.sh)), X = perp(cross(ad, f), ad);
+      ell(add(add(a.sh, mul(ad, 0.038)), mul(r, a.sg * 0.002)), X, ad, cross(X, ad), S.delt * 0.96, S.delt * 1.5, S.delt * 1.02, male ? TOP : SKIN, 0.075);
+    });
+    const H = (x, y, z) => sum(sk.headC, mul(r, x * hs), mul(hu, y * hs), mul(hf, z * hs));
+    cone(sub(sk.neckB, mul(u, 0.07)), add(sub(sk.headC, mul(hu, 0.04)), mul(hf, -0.012)), S.neck[0], S.neck[1], SKIN, 0.03);
+    [1, -1].forEach((sg) => cone(H(sg * 0.044, -0.04, -0.022), sum(sk.neckB, mul(f, male ? 0.036 : 0.032), mul(u, 0.012), mul(r, sg * 0.012)), male ? 0.017 : 0.013, male ? 0.013 : 0.01, SKIN, 0.03));
+    if (male) cone(sum(sk.neckB, mul(u, -0.06), mul(f, -0.004)), add(sk.neckB, mul(u, -0.022)), S.neck[0] + 0.014, S.neck[0] + 0.009, TOP, 0.012);
+
+    // ===== legs =====
+    sk.legs.forEach((g) => {
+      group(0.04);
+      const tv = sub(g.knee, g.hip), sv = sub(g.ank, g.knee), tL = len(tv), sL = len(sv), tn = norm(tv), sn = norm(sv);
+      const tf = perp(g.front, tn), sf = perp(g.front, sn), tm = perp(mul(r, -g.sg), tn), smd = perp(mul(r, -g.sg), sn);
+      const L1 = male ? SKIN : BOT, L2 = male ? SKIN : BOT;
+      const at = (t, ...o) => sum(g.hip, mul(tv, t), ...o), as = (t, ...o) => sum(g.knee, mul(sv, t), ...o);
+      const fm = male ? 1 : 1.04, mm = male ? 1 : 0.88;
+      cone(g.hip, g.knee, 0.074 * fm, 0.046, L1, 0.03);
+      boneEll(at(0.5, mul(tf, 0.02)), tn, tm, 0.06 * fm, 0.17, 0.05 * mm, L1, 0.04);
+      boneEll(at(0.8, mul(tf, 0.016), mul(tm, 0.022)), tn, tm, 0.03, 0.05, 0.028 * mm, L1, 0.03);
+      boneEll(at(0.45, mul(tf, -0.026)), tn, tm, 0.055 * fm, 0.16, 0.046, L1, 0.04);
+      boneEll(at(0.22, mul(tm, 0.03)), tn, tm, 0.05 * fm, 0.1, 0.055, L1, 0.05);
+      if (!male) boneEll(at(0.15, mul(tm, -0.035), mul(tf, -0.005)), tn, tm, 0.05, 0.09, 0.06, L1, 0.05);
+      sph(g.knee, 0.044, L1, 0.03);
+      boneEll(add(g.knee, mul(tf, 0.024)), tn, tm, 0.024, 0.027, 0.014, L1, 0.02);
+      cone(g.knee, g.ank, 0.041 * (male ? 1 : 0.95), 0.025, SKIN, 0.02);
+      boneEll(as(0.3, mul(sf, -0.025), mul(smd, 0.012)), sn, smd, 0.033 * mm, 0.075, 0.032 * mm, L2, 0.035);
+      boneEll(as(0.25, mul(sf, -0.021), mul(smd, -0.012)), sn, smd, 0.029 * mm, 0.065, 0.028 * mm, L2, 0.035);
+      boneEll(as(0.32, mul(sf, 0.008), mul(smd, -0.012)), sn, smd, 0.021, 0.08, 0.019, L2, 0.03);
+      if (male) cone(g.hip, at(0.52), 0.104, 0.085, BOT, 0.012);
+      else {
+        cone(g.knee, as(0.8), 0.044, lerp(0.041, 0.025, 0.8) + 0.004, BOT, 0.008);
+      }
+      // sock and trainer
+      const up = perp(mul(sn, -1), g.fd), sd = norm(cross(g.fd, up)), A = g.ank, fs = male ? 1 : 0.88;
+      const F = (x, y, z) => sum(A, mul(g.fd, x * fs), mul(up, y), mul(sd, z * fs));
+      cone(A, add(A, mul(sn, -0.065)), 0.031 * fs, 0.029 * fs, MAT.sock, 0.01);
+      box(F(0.075, -S.ankH + 0.014, 0), g.fd, up, sd, 0.142 * fs, 0.0145, 0.05 * fs, 0.012, MAT.sole);
+      ell(F(-0.018, -0.03, 0), g.fd, up, sd, 0.055 * fs, 0.042, 0.046 * fs, MAT.shoe, 0.02);
+      ell(F(0.065, -0.034, 0), g.fd, up, sd, 0.128 * fs, 0.038, 0.048 * fs, MAT.shoe, 0.03);
+      ell(F(0.168, -0.044, 0), g.fd, up, sd, 0.062 * fs, 0.027, 0.045 * fs, MAT.shoe, 0.03);
+      cone(F(0, -0.036, 0), F(0, 0.004, 0), 0.045 * fs, 0.037 * fs, MAT.shoe, 0.02);
+      ell(F(-0.055, -0.002, 0), g.fd, up, sd, 0.012, 0.022, 0.015, TOP, 0.006);
+    });
+
+    // ===== head =====
+    group(0.025);
+    const fe = male ? 1 : 0;
+    const hE = (x, y, z, rx, ry, rz, mat, k, flag) => ell(H(x, y, z), r, hu, hf, rx * hs, ry * hs, rz * hs, mat, k * hs, flag);
+    hE(0, 0.014, -0.012, 0.075, 0.09, 0.096, SKIN, 0);
+    hE(0, 0.004, 0.032, 0.064, 0.078, 0.064, SKIN, 0.03);
+    hE(0, 0.03, male ? 0.074 : 0.071, 0.056, male ? 0.013 : 0.01, male ? 0.02 : 0.016, SKIN, 0.02);
+    [1, -1].forEach((sg) => hE(sg * 0.045, male ? -0.012 : -0.006, 0.05, 0.024, 0.02, 0.024, SKIN, 0.025));
+    hE(0, -0.052, 0.03, male ? 0.052 : 0.047, 0.04, 0.058, SKIN, 0.03);
+    [1, -1].forEach((sg) => hE(sg * 0.039, -0.03, 0.056, 0.027, 0.026, 0.024, SKIN, 0.03));
+    [1, -1].forEach((sg) => hE(sg * (male ? 0.045 : 0.041), -0.056, -0.004, 0.019, 0.026, 0.028, SKIN, 0.035));
+    hE(0, male ? -0.084 : -0.08, male ? 0.06 : 0.058, male ? 0.024 : 0.02, male ? 0.018 : 0.016, male ? 0.019 : 0.017, SKIN, 0.02);
+    hE(0, -0.045, 0.066, 0.03, 0.024, 0.022, SKIN, 0.02);
+    const nz = male ? 0.94 : 0.84;
+    cone(H(0, 0.014, 0.086), H(0, -0.02, 0.086 + 0.014 * nz), 0.0075 * hs * nz, 0.0098 * hs * nz, SKIN, 0.012);
+    hE(0, -0.023, 0.086 + 0.015 * nz, 0.012 * nz, 0.011 * nz, 0.011 * nz, SKIN, 0.008);
+    [1, -1].forEach((sg) => hE(sg * 0.011 * nz, -0.029, 0.089, 0.0072 * nz, 0.0065 * nz, 0.0075 * nz, SKIN, 0.006));
+    [1, -1].forEach((sg) => { const X = r, Y = norm(add(hu, mul(hf, -0.27))), Z = cross(X, Y); ell(H(sg * 0.074, -0.006, -0.01), X, Y, Z, 0.011 * hs, 0.03 * hs, 0.019 * hs, SKIN, 0.006); });
+    [1, -1].forEach((sg) => hE(sg * 0.031, 0.007, 0.088, 0.0165, 0.015, 0.016, SKIN, 0.01, 1));
+    const eyes = [1, -1].map((sg) => H(sg * 0.031, 0.006, 0.072));
+    eyes.forEach((e) => sph(e, 0.0128 * hs, MAT.eye, 0.002));
+    let tail = null;
+    if (male) {
+      cutEll(H(0, 0.024, -0.01), r, hu, hf, 0.083 * hs, 0.096 * hs, 0.105 * hs, HAIR, 0.008, norm([0, 1, -0.65]), -0.0218 * hs);
+      hE(0, 0.072, 0.028, 0.058, 0.04, 0.062, HAIR, 0.02);
+    } else {
+      cutEll(H(0, 0.02, -0.014), r, hu, hf, 0.085 * hs, 0.097 * hs, 0.108 * hs, HAIR, 0.01, norm([0, 1, -0.658]), -0.03 * hs);
+      [[0.02, 0.07, 0.04, 0.046, 0.028, 0.05, -0.3], [-0.028, 0.066, 0.036, 0.042, 0.026, 0.046, 0.4]].forEach((h) => { const X = norm(add(r, mul(hu, h[6]))), Y = norm(sub(hu, mul(r, h[6]))); ell(H(h[0], h[1], h[2]), X, Y, cross(X, Y), h[3] * hs, h[4] * hs, h[5] * hs, HAIR, 0.025 * hs); });
+      const base = H(0, 0.03, -0.103), d1 = norm(add(mul(hf, -0.8), mul(hu, -0.6)));
+      const gdown = norm(mix(mul(hu, -1), [0, -1, 0], 0.7));
+      const p1 = add(base, mul(d1, 0.04)), p2 = add(p1, mul(norm(add(mul(gdown, 0.85), mul(hf, -0.15))), 0.085)), p3 = add(p2, mul(gdown, 0.075));
+      cone(base, p1, 0.024, 0.03, HAIR, 0.02);
+      cone(p1, p2, 0.03, 0.025, HAIR, 0.02);
+      cone(p2, p3, 0.025, 0.007, HAIR, 0.02);
+      cone(add(base, mul(d1, 0.004)), add(base, mul(d1, 0.016)), 0.021, 0.021, TOP, 0);
+      tail = [base, p3];
+    }
+
+    // ===== arms and hands =====
+    sk.arms.forEach((a) => {
+      group(0.015);
+      const uv = sub(a.elb, a.sh), fv = sub(a.wrist, a.elb), un = norm(uv), fn = norm(fv);
+      const post = perp(a.pole, un), ant = mul(post, -1);
+      let lat = norm(cross(un, post)); if (dot(lat, r) * a.sg < 0) lat = mul(lat, -1);
+      const fpost = perp(a.pole, fn);
+      const am = male ? 1 : 0.86;
+      cone(a.sh, a.elb, 0.042 * am, 0.033 * am, SKIN, 0.02);
+      boneEll(sum(a.sh, mul(uv, 0.56), mul(ant, 0.017 * am)), un, lat, 0.034 * am, 0.075 * am, 0.03 * am, SKIN, 0.03);
+      boneEll(sum(a.sh, mul(uv, 0.4), mul(post, 0.016 * am)), un, lat, 0.036 * am, 0.09 * am, 0.032 * am, SKIN, 0.03);
+      sph(add(a.elb, mul(post, 0.008)), 0.03 * am, SKIN, 0.02);
+      cone(a.elb, a.wrist, 0.034 * am, 0.0235 * am, SKIN, 0.02);
+      boneEll(sum(a.elb, mul(fv, 0.28), mul(fpost, -0.004)), fn, lat, 0.043 * am, 0.08 * am, 0.039 * am, SKIN, 0.035);
+      if (male) cone(add(a.sh, mul(un, 0.01)), add(a.sh, mul(uv, 0.45)), 0.053, 0.05, TOP, 0.015);
+      // hand: x = thumb side, y = along the fingers, z = palm normal
+      const hm = male ? 1 : 0.9, W = a.wrist, th = a.thumb, pm = a.palm;
+      const HN = (x, y, z) => sum(W, mul(th, x * hm), mul(fn, y * hm), mul(pm, z * hm));
+      ell(HN(0, 0.04, -0.002), th, fn, pm, 0.04 * hm, 0.045 * hm, 0.019 * hm, SKIN, 0.02);
+      if (a.holding) {
+        ell(sub(a.grip, mul(fn, 0.004)), th, fn, pm, 0.044 * hm, 0.044 * hm, 0.031 * hm, SKIN, 0.02);
+        cone(HN(0.022, 0.012, 0.01), HN(0.03, 0.062, 0.03), 0.0115 * hm, 0.0095 * hm, SKIN, 0.01);
+      } else {
+        const fd2 = norm(add(mul(fn, 0.92), mul(pm, 0.39))), X = perp(th, fd2), Z = cross(X, fd2);
+        ell(add(HN(0, 0.098, 0.006), mul(fd2, 0.008)), X, fd2, Z, 0.038 * hm, 0.048 * hm, 0.013 * hm, SKIN, 0.02);
+        cone(HN(0.024, 0.02, 0.01), HN(0.033, 0.083, 0.022), 0.0115 * hm, 0.0088 * hm, SKIN, 0.01);
+      }
+    });
+
+    // ===== props =====
+    sk.props.forEach((p) => {
+      group(0, true);
+      if (p.t === "db") {
+        const pp = perp([0, 1, 0.3], p.ax);
+        cyl(add(p.c, mul(p.ax, -0.07)), add(p.c, mul(p.ax, 0.07)), 0.0145, 0.002, MAT.metal);
+        [1, -1].forEach((sg) => {
+          hexp(add(p.c, mul(p.ax, sg * 0.0925)), p.ax, pp, 0.047, 0.028, 0.006, MAT.dbHead);
+          cyl(add(p.c, mul(p.ax, sg * 0.058)), add(p.c, mul(p.ax, sg * 0.066)), 0.021, 0.002, MAT.metal);
+        });
+      } else if (p.t === "pad") {
+        const c = mix(p.a, p.b, 0.5), X = norm(sub(p.b, p.a));
+        box(c, X, [0, 1, 0], [0, 0, 1], len(sub(p.b, p.a)) / 2, p.h, 0.135, 0.028, MAT.pad);
+      } else if (p.t === "padline") {
+        const c = mix(p.a, p.b, 0.5), X = norm(sub(p.b, p.a)), Y = cross([0, 0, 1], X);
+        box(c, X, Y, [0, 0, 1], len(sub(p.b, p.a)) / 2, p.w / 2, 0.135, 0.028, MAT.pad);
+      } else {
+        [1, -1].forEach((sg) => cyl(add(p.a, [0, 0, sg * 0.1]), add(p.b, [0, 0.012, sg * 0.1]), 0.017, 0.004, MAT.frame));
+        cyl(add(p.b, [0, 0.016, -0.13]), add(p.b, [0, 0.016, 0.13]), 0.016, 0.004, MAT.frame);
+      }
+    });
+    return { groups: groups, eyes: eyes, tail: tail };
+  }
+
+  // ---------- shader ----------
+  const MAXROWS = 192, MAXG = 16;
+  const VS = "#version 300 es\nin vec2 aPos; void main(){ gl_Position = vec4(aPos, 0.0, 1.0); }";
+  const FS = `#version 300 es
+precision highp float;
+precision highp sampler2D;
+#define MAXG ${MAXG}
+uniform vec2 uRes; uniform vec3 uCam, uTgt; uniform float uFov;
+uniform sampler2D uData; uniform vec4 uG[MAXG*2]; uniform int uNG;
+uniform vec4 uBound; uniform vec3 uCol[16]; uniform vec3 uKey; uniform vec3 uMS, uMO; uniform int uAA;
+uniform vec3 uHC, uHX, uHY, uHZ; uniform float uHS, uMale;
+uniform vec3 uEye0, uEye1, uTail0, uTail1; uniform float uTailOn; uniform vec4 uCut; uniform vec3 uTH, uTX, uTY, uTZ; uniform float uTS;
+out vec4 frag;
+uniform int uDbg;
+float gFar = 0.04;
+float smin(float a, float b, float k){ if(k <= 0.0) return min(a, b); float h = max(k - abs(a - b), 0.0)/k; return min(a, b) - h*h*k*0.25; }
+float dot2(vec3 v){ return dot(v, v); }
+float sdRoundCone(vec3 p, vec3 a, vec3 b, float r1, float r2){
+  vec3 ba = b - a; float l2 = dot(ba, ba); float rr = r1 - r2; float a2 = l2 - rr*rr; float il2 = 1.0/l2;
+  vec3 pa = p - a; float y = dot(pa, ba); float z = y - l2;
+  float x2 = dot2(pa*l2 - ba*y); float y2 = y*y*l2; float z2 = z*z*l2;
+  float k = sign(rr)*rr*rr*x2;
+  if(sign(z)*a2*z2 > k) return sqrt(x2 + z2)*il2 - r2;
+  if(sign(y)*a2*y2 < k) return sqrt(x2 + y2)*il2 - r1;
+  return (sqrt(x2*a2*il2) + y*rr)*il2 - r1;
+}
+float sdEll(vec3 qs, vec3 ir){ float k0 = length(qs); float k1 = length(qs*ir); return k0*(k0 - 1.0)/k1; }
+float sdCyl(vec3 p, vec3 a, vec3 b, float r){
+  vec3 ba = b - a; vec3 pa = p - a; float baba = dot(ba, ba); float paba = dot(pa, ba);
+  float x = length(pa*baba - ba*paba) - r*baba; float y = abs(paba - baba*0.5) - baba*0.5;
+  float x2 = x*x; float y2 = y*y*baba;
+  float d = (max(x, y) < 0.0) ? -min(x2, y2) : (((x > 0.0) ? x2 : 0.0) + ((y > 0.0) ? y2 : 0.0));
+  return sign(d)*sqrt(abs(d))/baba;
+}
+float sdHex(vec3 p, vec2 h){
+  const vec3 k = vec3(-0.8660254, 0.5, 0.57735);
+  p = abs(p);
+  p.xy -= 2.0*min(dot(k.xy, p.xy), 0.0)*k.xy;
+  vec2 d = vec2(length(p.xy - vec2(clamp(p.x, -k.z*h.x, k.z*h.x), h.x))*sign(p.y - h.x), p.z - h.y);
+  return min(max(d.x, d.y), 0.0) + length(max(d, 0.0));
+}
+vec4 row(int c, int j){ return texelFetch(uData, ivec2(c, j), 0); }
+float map(vec3 p, out float mat){
+  p = p*uMS + uMO;
+  float d = 1e9, best = 1e9; mat = 0.0;
+  for(int g = 0; g < MAXG; g++){
+    if(g >= uNG) break;
+    vec4 gb = uG[2*g], gi = uG[2*g + 1];
+    float bd = length(p - gb.xyz) - gb.w;
+    if(bd > d + gi.z + 0.002) continue;
+    if(bd > gFar){ d = min(d, bd); continue; }
+    float dg = 1e9;
+    int s = int(gi.x + 0.5), n = int(gi.y + 0.5);
+    for(int i = 0; i < 80; i++){
+      if(i >= n) break;
+      int j = s + i;
+      vec4 v0 = row(0, j), v1 = row(1, j), v2 = row(2, j), v3 = row(3, j);
+      float t = v0.w, di;
+      if(t < 0.5) di = sdRoundCone(p, v0.xyz, v1.xyz, v2.x, v2.y);
+      else if(t < 2.5){
+        vec3 q = p - v0.xyz; vec3 qs = vec3(dot(q, v1.xyz), dot(q, v2.xyz), dot(q, v3.xyz));
+        vec3 ir = vec3(length(v1.xyz), length(v2.xyz), length(v3.xyz));
+        di = sdEll(qs, ir);
+        if(t > 1.5){ vec4 v4 = row(4, j); float pc = v4.w - dot(qs/ir, v4.xyz); di = -smin(-di, -pc, 0.012); }
+      } else if(t < 3.5){
+        vec4 v4 = row(4, j); vec3 q = p - v0.xyz; q = vec3(dot(q, v1.xyz), dot(q, v2.xyz), dot(q, v3.xyz));
+        vec3 w = abs(q) - v4.xyz + v4.w; di = length(max(w, 0.0)) + min(max(w.x, max(w.y, w.z)), 0.0) - v4.w;
+      } else if(t < 4.5) di = sdCyl(p, v0.xyz, v1.xyz, v2.x - v2.y) - v2.y;
+      else {
+        vec4 v4 = row(4, j); vec3 q = p - v0.xyz; vec3 b = cross(v1.xyz, v2.xyz);
+        di = sdHex(vec3(dot(q, v2.xyz), dot(q, b), dot(q, v1.xyz)), vec2(v4.x - v4.z, v4.y - v4.z)) - v4.z;
+      }
+      if(v3.w > 0.5){ dg = -smin(-dg, di, v2.w); best = max(best, dg); }
+      else { if(di < best){ best = di; mat = v1.w; } dg = smin(dg, di, v2.w); }
+    }
+    d = smin(d, dg, gi.z);
+  }
+  return d;
+}
+float mapD(vec3 p){ float m; return map(p, m); }
+vec3 calcNormal(vec3 p){
+  const vec2 e = vec2(1.0, -1.0)*0.0005;
+  return normalize(e.xyy*mapD(p + e.xyy) + e.yyx*mapD(p + e.yyx) + e.yxy*mapD(p + e.yxy) + e.xxx*mapD(p + e.xxx));
+}
+vec2 sphereHit(vec3 ro, vec3 rd, vec4 s){
+  vec3 oc = ro - s.xyz; float b = dot(oc, rd); float c = dot(oc, oc) - s.w*s.w; float h = b*b - c;
+  if(h < 0.0) return vec2(-1.0); h = sqrt(h); return vec2(-b - h, -b + h);
+}
+float softShadow(vec3 ro, vec3 rd, float k){
+  vec2 sb = sphereHit(ro, rd, uBound); if(sb.y < 0.0) return 1.0;
+  gFar = 0.3;
+  float res = 1.0, t = max(0.012, sb.x);
+  for(int i = 0; i < 64; i++){
+    float h = mapD(ro + rd*t); res = min(res, k*h/t); t += clamp(h, 0.006, 0.09);
+    if(res < 0.003 || t > sb.y) break;
+  }
+  gFar = 0.04;
+  res = clamp(res, 0.0, 1.0); return res*res*(3.0 - 2.0*res);
+}
+float calcAO(vec3 p, vec3 n){
+  float occ = 0.0, sca = 1.0;
+  for(int i = 0; i < 5; i++){ float h = 0.01 + 0.06*float(i)/4.0; float d = mapD(p + h*n); occ += (h - d)*sca; sca *= 0.85; }
+  return clamp(1.0 - 3.0*occ, 0.0, 1.0);
+}
+vec3 aces(vec3 x){ return clamp((x*(2.51*x + 0.03))/(x*(2.43*x + 0.59) + 0.14), 0.0, 1.0); }
+vec3 headLocal(vec3 pm){ vec3 q = pm - uHC; return vec3(dot(q, uHX), dot(q, uHY), dot(q, uHZ))/uHS; }
+vec4 shade(vec2 fc){
+  vec3 ww = normalize(uTgt - uCam), uu = normalize(cross(ww, vec3(0.0, 1.0, 0.0))), vv = cross(uu, ww);
+  vec2 pp = (2.0*fc - uRes)/uRes.y;
+  vec3 rd = normalize(pp.x*uu + pp.y*vv + ww/tan(uFov*0.5)), ro = uCam;
+  vec3 L = normalize(uKey);
+  vec2 sb = sphereHit(ro, rd, uBound);
+  float t = -1.0, m = 0.0;
+  if(sb.y > 0.0){
+    float tt = max(sb.x, 0.0);
+    for(int i = 0; i < 160; i++){
+      float h = map(ro + rd*tt, m);
+      if(h < 0.0002*tt){ t = tt; break; }
+      tt += h; if(tt > sb.y) break;
+    }
+  }
+  float tf = rd.y < 0.0 ? -ro.y/rd.y : -1.0;
+  if(t > 0.0 && (tf < 0.0 || t < tf)){
+    vec3 p = ro + rd*t, n = calcNormal(p);
+    vec3 mir = uMS, pm = p*uMS + uMO;
+    int mi = int(m + 0.5);
+    vec3 alb = uCol[mi];
+    bool hair = false; vec3 T = vec3(0.0);
+    if(mi == 7){
+      vec3 e = (length(pm - uEye0) < length(pm - uEye1)) ? uEye0 : uEye1;
+      vec3 v = normalize(pm - e);
+      float a = acos(clamp(dot(v, uHZ), -1.0, 1.0)), lv = dot(v, uHY);
+      float ir = 0.5, pr = 0.21;
+      vec3 irisC = uCol[14]*(0.7 + 0.7*smoothstep(ir, 0.05, a));
+      irisC = mix(irisC, uCol[14]*0.35, smoothstep(ir - 0.12, ir, a));
+      alb = mix(alb, irisC, 1.0 - smoothstep(ir - 0.025, ir + 0.01, a));
+      alb = mix(alb, vec3(0.008), 1.0 - smoothstep(pr - 0.03, pr + 0.01, a));
+      alb *= mix(0.7, 1.0, smoothstep(0.75, 0.2, abs(dot(v, uHX))));
+      float lid = smoothstep(0.31, 0.34, lv) + 1.0 - smoothstep(-0.66, -0.62, lv);
+      float lash = (smoothstep(0.22, 0.27, lv) - smoothstep(0.31, 0.34, lv))*(0.75 + 0.25*(1.0 - uMale));
+      alb = mix(alb, vec3(0.012, 0.008, 0.006), clamp(lash, 0.0, 1.0));
+      if(lid > 0.5){ mi = 0; alb = uCol[0]*0.93; }
+    }
+    if(mi == 0){
+      vec3 hl = headLocal(pm);
+      if(hl.z > 0.035 && dot(hl, hl) < 0.03){
+        float ax = abs(hl.x);
+        float mw = mix(0.0195, 0.0215, uMale), xm = ax/mw;
+        if(xm < 1.0){
+          float dy = hl.y + 0.05, sq = sqrt(1.0 - xm*xm);
+          float uh = mix(0.0068, 0.0055, uMale)*sq - 0.0016*exp(-pow(hl.x/0.0045, 2.0));
+          float lh = mix(0.0095, 0.0075, uMale)*sq;
+          float lipA = (1.0 - smoothstep(uh - 0.0009, uh + 0.0009, dy))*smoothstep(-lh - 0.0009, -lh + 0.0009, dy)*(1.0 - smoothstep(0.8, 1.0, xm));
+          vec3 lipC = mix(alb, uCol[12], mix(0.85, 0.55, uMale));
+          lipC *= 1.0 + 0.12*smoothstep(0.0, lh, -dy);
+          alb = mix(alb, lipC, lipA);
+          float line = (1.0 - smoothstep(0.0003, 0.0013, abs(dy - 0.0003)))*(1.0 - smoothstep(0.75, 1.0, xm));
+          alb = mix(alb, uCol[12]*0.3, line*0.85);
+        }
+        float bt = (ax - 0.011)/0.043;
+        if(bt > -0.1 && bt < 1.1 && hl.z > 0.045){
+          float yb = 0.029 + 0.008*sin(clamp(bt, 0.0, 1.0)*2.7) - 0.003*bt;
+          float th = mix(0.0062, 0.0024, clamp(bt, 0.0, 1.0))*mix(0.85, 1.15, uMale);
+          float bA = (1.0 - smoothstep(th*0.5 - 0.0007, th*0.5 + 0.0007, abs(hl.y - yb)))*smoothstep(-0.1, 0.06, bt)*(1.0 - smoothstep(0.95, 1.1, bt));
+          alb = mix(alb, uCol[13], bA*0.95);
+        }
+        float ch0 = 0.0;
+        float ch = exp(-dot(vec2(ax - 0.044, hl.y + 0.022), vec2(ax - 0.044, hl.y + 0.022))/0.00035);
+        alb = mix(alb, alb*vec3(1.05, 0.86, 0.84), ch*mix(0.35, 0.15, uMale));
+      }
+    }
+    if(mi == 0){
+      vec3 hl = headLocal(pm);
+      if(dot(hl, hl) < 0.03 && hl.y > -0.035){
+        float hv = (hl.y - uCut.x) - uCut.z*(hl.z + uCut.y) + uCut.w;
+        float w = mix(0.016, 0.006, smoothstep(0.03, 0.07, hl.z));
+        float fa = smoothstep(-w, -0.0005, hv)*mix(0.55, 0.8, uMale)*(1.0 - smoothstep(0.065, 0.078, abs(hl.x))*step(-0.03, hl.z)*0.0);
+        alb = mix(alb, uCol[1]*1.15, fa);
+      }
+    }
+    if((mi == 0 || mi == 2) && uMale < 0.5){
+      vec3 q = pm - uTH; vec3 tl = vec3(dot(q, uTX), dot(q, uTY)/uTS, dot(q, uTZ));
+      if(tl.y > 0.3 && tl.y < 0.62 && abs(tl.x) < 0.12){
+        float ax = abs(tl.x);
+        float strap = (1.0 - smoothstep(0.0105, 0.0125, abs(ax - 0.064)))*(1.0 - smoothstep(0.57, 0.59, tl.y));
+        float am = min(ax, 0.07), ao2 = max(ax - 0.072, 0.0);
+        float yN = (tl.z > 0.0 ? 0.398 + 9.0*am*am : 0.455 + 4.0*am*am) - 1.9*ao2;
+        float body = 1.0 - smoothstep(yN - 0.0015, yN + 0.0015, tl.y);
+        float c = max(strap, body);
+        if(mi == 2 && tl.y > 0.36){ alb = mix(uCol[0], uCol[2], c); mi = c > 0.5 ? 2 : 0; }
+        else if(mi == 0){ alb = mix(alb, uCol[2], c); if(c > 0.5) mi = 2; }
+      }
+    }
+    if(mi == 1){
+      hair = true;
+      vec3 nm = n*mir; float g;
+      bool onTail = false;
+      if(uTailOn > 0.5){
+        vec3 ta = uTail1 - uTail0; float s = dot(pm - uTail0, ta)/dot(ta, ta);
+        vec3 cp = uTail0 + ta*clamp(s, 0.0, 1.0);
+        if(s > 0.02 && length(pm - cp) < 0.045){
+          onTail = true; T = normalize(ta);
+          vec3 b1 = normalize(cross(T, uHX)), b2 = cross(T, b1), rdir = normalize(pm - cp);
+          g = atan(dot(rdir, b2), dot(rdir, b1))*9.0;
+        }
+      }
+      if(!onTail){
+        vec3 hl = headLocal(pm);
+        g = atan(hl.x, hl.y + 0.03)*30.0;
+        T = normalize(cross(nm, normalize(cross(uHZ, nm) + vec3(1e-4))));
+      }
+      float amp = 1.0 - smoothstep(0.35, 1.0, fwidth(g));
+      float sg = sin(g*6.2831853);
+      float ga = onTail ? 0.22 : mix(0.2, 0.1, uMale);
+      alb *= 1.0 + ga*amp*sg;
+      vec3 across = normalize(cross(T, nm) + vec3(1e-5));
+      nm = normalize(nm + ga*1.2*amp*cos(g*6.2831853)*across);
+      n = nm*mir; T = T*mir;
+    }
+    float sh = uDbg == 1 ? 1.0 : softShadow(p + n*0.003, L, 9.0), ao = uDbg == 2 ? 1.0 : calcAO(p, n);
+    float dif = clamp(dot(n, L), 0.0, 1.0);
+    float sky = clamp(0.5 + 0.5*n.y, 0.0, 1.0), bou = clamp(0.25 - 0.75*n.y, 0.0, 1.0);
+    float fre = pow(clamp(1.0 + dot(n, rd), 0.0, 1.0), 2.5);
+    vec3 back = normalize(vec3(-L.x, 0.35, -L.z));
+    float rim = clamp(dot(n, back), 0.0, 1.0);
+    vec3 lin = 2.7*dif*sh*vec3(1.0, 0.95, 0.88);
+    lin += 0.85*sky*ao*vec3(0.62, 0.71, 0.92);
+    lin += 0.35*bou*ao*vec3(0.85, 0.78, 0.7);
+    lin += 0.55*rim*fre*ao*vec3(1.0);
+    if(mi == 0){ float w = clamp((dot(n, L) + 0.45)/1.45, 0.0, 1.0); lin += 0.6*(w - dif)*vec3(1.0, 0.38, 0.25)*mix(0.35, 1.0, sh); lin += 0.08*fre*ao*vec3(1.0, 0.7, 0.6); }
+    if(mi == 2 || mi == 3){ lin += 0.28*fre*ao*vec3(1.0); }
+    vec3 col = alb*lin;
+    vec3 hv = normalize(L - rd); float nh = clamp(dot(n, hv), 0.0, 1.0);
+    if(hair){
+      float th1 = dot(T, hv), s1 = sqrt(max(0.0, 1.0 - th1*th1));
+      vec3 T2 = normalize(T + n*0.3); float th2 = dot(T2, hv), s2 = sqrt(max(0.0, 1.0 - th2*th2));
+      col += (0.09*pow(s1, 110.0)*vec3(1.0) + 0.45*pow(s2, 24.0)*alb)*dif*sh;
+    } else {
+      float gloss = 10.0, amt = 0.04;
+      if(mi == 0){ gloss = 24.0; amt = 0.075; }
+      else if(mi == 7){ gloss = 140.0; amt = 0.9; }
+      else if(mi == 9 || mi == 11){ gloss = 70.0; amt = 0.75; }
+      else if(mi == 8 || mi == 10){ gloss = 32.0; amt = 0.18; }
+      else if(mi == 4){ gloss = 18.0; amt = 0.08; }
+      col += amt*pow(nh, gloss)*dif*sh*(gloss + 8.0)/8.0*vec3(1.0, 0.97, 0.92);
+    }
+    col = aces(col*0.62);
+    return vec4(pow(col, vec3(1.0/2.2)), 1.0);
+  }
+  if(tf > 0.0){
+    vec3 p = ro + rd*tf;
+    float sh = softShadow(p + vec3(0.0, 0.002, 0.0), L, 6.0);
+    gFar = 0.3; float c = clamp(mapD(p + vec3(0.0, 0.03, 0.0))/0.16, 0.0, 1.0); gFar = 0.04;
+    float a = max((1.0 - sh)*0.32, (1.0 - c)*(1.0 - c)*0.26);
+    float fade = 1.0 - smoothstep(0.6, 1.4, length(p.xz - uBound.xz));
+    return vec4(0.0, 0.0, 0.0, a*fade);
+  }
+  return vec4(0.0);
+}
+void main(){
+  vec4 acc = vec4(0.0);
+  if(uAA > 1){
+    for(int j = 0; j < 2; j++) for(int i = 0; i < 2; i++){ acc += shade(gl_FragCoord.xy + (vec2(float(i), float(j)) - 0.5)*0.5); }
+    acc *= 0.25;
+  } else acc = shade(gl_FragCoord.xy);
+  frag = vec4(acc.rgb*acc.a, acc.a);
+}`;
+
+  function makeRenderer(canvas, o) {
+    const gl = canvas.getContext("webgl2", { premultipliedAlpha: true, alpha: true, antialias: false, preserveDrawingBuffer: !!(o && o.preserve) });
+    if (!gl) throw new Error("WebGL2 unavailable");
+    const comp = (type, src) => { const s = gl.createShader(type); gl.shaderSource(s, src); gl.compileShader(s); if (!gl.getShaderParameter(s, gl.COMPILE_STATUS)) throw new Error(gl.getShaderInfoLog(s)); return s; };
+    const pg = gl.createProgram();
+    gl.attachShader(pg, comp(gl.VERTEX_SHADER, VS)); gl.attachShader(pg, comp(gl.FRAGMENT_SHADER, FS)); gl.linkProgram(pg);
+    if (!gl.getProgramParameter(pg, gl.LINK_STATUS)) throw new Error(gl.getProgramInfoLog(pg));
+    gl.useProgram(pg);
+    const buf = gl.createBuffer(); gl.bindBuffer(gl.ARRAY_BUFFER, buf);
+    gl.bufferData(gl.ARRAY_BUFFER, new Float32Array([-1, -1, 3, -1, -1, 3]), gl.STATIC_DRAW);
+    const loc = gl.getAttribLocation(pg, "aPos"); gl.enableVertexAttribArray(loc); gl.vertexAttribPointer(loc, 2, gl.FLOAT, false, 0, 0);
+    const U = {};
+    ["uRes", "uCam", "uTgt", "uFov", "uData", "uG", "uNG", "uBound", "uCol", "uKey", "uMS", "uMO", "uAA", "uHC", "uHX", "uHY", "uHZ", "uHS", "uMale", "uEye0", "uEye1", "uTail0", "uTail1", "uTailOn", "uDbg", "uCut", "uTH", "uTX", "uTY", "uTZ", "uTS"].forEach((n) => U[n] = gl.getUniformLocation(pg, n));
+    const tex = gl.createTexture(); gl.bindTexture(gl.TEXTURE_2D, tex);
+    gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MIN_FILTER, gl.NEAREST); gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MAG_FILTER, gl.NEAREST);
+    gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_S, gl.CLAMP_TO_EDGE); gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_T, gl.CLAMP_TO_EDGE);
+    const data = new Float32Array(MAXROWS * 5 * 4);
+    gl.texImage2D(gl.TEXTURE_2D, 0, gl.RGBA32F, 5, MAXROWS, 0, gl.RGBA, gl.FLOAT, data);
+    gl.uniform1i(U.uData, 0);
+    function bounds(sk) {
+      const B = build(sk); let mn = [1e9, 1e9, 1e9], mx = [-1e9, -1e9, -1e9];
+      B.groups.forEach((g) => { for (let j = 0; j < 3; j++) { mn[j] = Math.min(mn[j], g.mn[j]); mx[j] = Math.max(mx[j], g.mx[j]); } });
+      return [mn, mx, B];
+    }
+    return function draw(opts) {
+      const sex = opts.sex === "f" ? "f" : "m", key = opts.pose, W = opts.w || canvas.width, Hh = opts.h || canvas.height;
+      const sk = skeleton(key, opts.k || 0, sex);
+      const [mn, mx, B] = bounds(sk);
+      const side = !!(X3[key] && X3[key].side);
+      const az = rad(opts.az == null ? 28 : opts.az), el = rad(opts.el == null ? 10 : opts.el), fov = opts.fov || 26;
+      const fr = opts.target ? { tgt: opts.target, dist: opts.dist } : frameFor(key, sex, W / Hh, az, el, fov, opts.fit || 1);
+      const tgt = fr.tgt;
+      // mirror for the second side: across the body (z), or end to end (x) for the side plank
+      let MS = [1, 1, 1], MO = [0, 0, 0];
+      if (opts.mirror) { if (side) { MS = [-1, 1, 1]; MO = [2 * tgt[0], 0, 0]; } else MS = [1, 1, -1]; }
+      const mp = (q) => [q[0] * MS[0] + MO[0], q[1], q[2] * MS[2]];
+      data.fill(0);
+      const gtab = new Float32Array(MAXG * 8);
+      let row = 0;
+      B.groups.forEach((g, gi) => {
+        g.rows.forEach((rw) => { data.set(rw, row * 20); row++; });
+        const c = mix(g.mn, g.mx, 0.5), rr = len(sub(g.mx, g.mn)) / 2;
+        gtab.set([c[0], c[1], c[2], rr, row - g.rows.length, g.rows.length, g.k, g.prop ? 1 : 0], gi * 8);
+      });
+      if (row > MAXROWS) throw new Error("too many shapes: " + row);
+      gl.bindTexture(gl.TEXTURE_2D, tex);
+      gl.texSubImage2D(gl.TEXTURE_2D, 0, 0, 0, 5, MAXROWS, gl.RGBA, gl.FLOAT, data);
+      const c = mp(mix(mn, mx, 0.5)), rr = len(sub(mx, mn)) / 2 + 0.02;
+      const P = Object.assign({}, PALETTE, opts.palette || {}), male = sex === "m";
+      const col = [];
+      [P.skin, male ? P.hairM : P.hairF, P.top, P.bottom, P.shoe, P.sole, P.sock, P.sclera, P.dbHead, P.metal, P.pad, P.frame,
+       male ? P.lipM : P.lipF, male ? P.browM : P.browF, male ? P.irisM : P.irisF, "#000000"].forEach((h) => col.push(...hex(h)));
+      gl.viewport(0, 0, W, Hh);
+      if (!opts.noClear) { gl.clearColor(0, 0, 0, 0); gl.clear(gl.COLOR_BUFFER_BIT); }
+      gl.uniform2f(U.uRes, W, Hh);
+      const dist = fr.dist;
+      const cam = [tgt[0] + dist * Math.sin(az) * Math.cos(el), tgt[1] + dist * Math.sin(el), tgt[2] + dist * Math.cos(az) * Math.cos(el)];
+      gl.uniform3fv(U.uCam, cam); gl.uniform3fv(U.uTgt, tgt); gl.uniform1f(U.uFov, rad(fov));
+      gl.uniform4fv(U.uG, gtab); gl.uniform1i(U.uNG, B.groups.length);
+      gl.uniform4f(U.uBound, c[0], c[1], c[2], rr);
+      gl.uniform3fv(U.uCol, new Float32Array(col));
+      gl.uniform3fv(U.uKey, rotY(opts.key || [0.55, 0.85, 0.75], az - rad(25)));
+      gl.uniform3fv(U.uMS, MS); gl.uniform3fv(U.uMO, MO);
+      gl.uniform1i(U.uAA, opts.aa || 1);
+      gl.uniform3fv(U.uHC, sk.headC); gl.uniform3fv(U.uHX, sk.r); gl.uniform3fv(U.uHY, sk.hu); gl.uniform3fv(U.uHZ, sk.hf);
+      gl.uniform1f(U.uHS, SPEC[sex].hs); gl.uniform1f(U.uMale, male ? 1 : 0);
+      gl.uniform3fv(U.uEye0, B.eyes[0]); gl.uniform3fv(U.uEye1, B.eyes[1]);
+      gl.uniform3fv(U.uTail0, B.tail ? B.tail[0] : [0, -9, 0]); gl.uniform3fv(U.uTail1, B.tail ? B.tail[1] : [0, -9.1, 0]); gl.uniform1f(U.uTailOn, B.tail ? 1 : 0);
+      gl.uniform1i(U.uDbg, opts.dbg || 0);
+      gl.uniform3fv(U.uTH, sk.hipC); gl.uniform3fv(U.uTX, sk.r); gl.uniform3fv(U.uTY, sk.u); gl.uniform3fv(U.uTZ, sk.f); gl.uniform1f(U.uTS, SPEC[sex].s / 0.0113);
+      gl.uniform4fv(U.uCut, male ? [0.024, 0.01, 0.65, 0.026] : [0.02, 0.014, 0.658, 0.0359]);
+      gl.drawArrays(gl.TRIANGLES, 0, 3);
+      return { prims: row, groups: B.groups.length, w: W, h: Hh };
+    };
+  }
+  // Camera framing per exercise, figure and box shape: fits every frame of the movement (and the other side), so the view never jumps.
+  const frames = new Map();
+  function frameFor(key, sex, aspect, az, el, fov, fit) {
+    const id = [key, sex, aspect.toFixed(2), az.toFixed(3), el.toFixed(3), fov, fit].join("|");
+    if (frames.has(id)) return frames.get(id);
+    let mn = [1e9, 1e9, 1e9], mx = [-1e9, -1e9, -1e9];
+    [0, 0.25, 0.5, 0.75, 1].forEach((k) => {
+      build(skeleton(key, k, sex)).groups.forEach((g) => { for (let j = 0; j < 3; j++) { mn[j] = Math.min(mn[j], g.mn[j]); mx[j] = Math.max(mx[j], g.mx[j]); } });
+    });
+    const side = !!(X3[key] && X3[key].side);
+    if (side) { const cx = (mn[0] + mx[0]) / 2; } else { const z = Math.max(Math.abs(mn[2]), Math.abs(mx[2])); mn[2] = -z; mx[2] = z; }
+    mn[1] = Math.max(mn[1], 0);
+    const tgt = mix(mn, mx, 0.5);
+    const dir = [Math.sin(az) * Math.cos(el), Math.sin(el), Math.cos(az) * Math.cos(el)];
+    const ww = mul(dir, -1), uu = norm(cross(ww, [0, 1, 0])), vv = cross(uu, ww);
+    const tv = Math.tan(rad(fov) / 2) * 0.97 / fit, th = tv * aspect;
+    let dist = 0.5;
+    for (let i = 0; i < 8; i++) {
+      const q = [i & 1 ? mx[0] : mn[0], i & 2 ? mx[1] : mn[1], i & 4 ? mx[2] : mn[2]], r = sub(q, tgt);
+      const x = dot(r, uu), y = dot(r, vv), z = dot(r, dir);
+      dist = Math.max(dist, Math.abs(x) / th + z, Math.abs(y) / tv + z);
+    }
+    const out = { tgt: tgt, dist: dist };
+    frames.set(id, out);
+    return out;
+  }
+  return { makeRenderer: makeRenderer, setAnim: setAnim, skeleton: skeleton, build: build, PALETTE: PALETTE };
+})();
+</script>
 <script>
 (() => {
   "use strict";
@@ -619,13 +1341,14 @@ body[data-phase="work"] .swap { color: var(--fg); }
     }
   } catch (e) {}
   const saveRuns = () => { try { localStorage.setItem(RKEY, JSON.stringify(RS)); } catch (e) {} };
-  let S = { v: 1, rest: 60, sessions: [], current: null };
+  let S = { v: 1, rest: 60, sessions: [], current: null, fig: "m" };
   try {
     const raw = localStorage.getItem(SKEY);
     if (raw) {
       const d = JSON.parse(raw);
       if (d && typeof d === "object") {
         if (RESTS.includes(+d.rest)) S.rest = +d.rest;
+        if (d.fig === "m" || d.fig === "f") S.fig = d.fig;
         if (Array.isArray(d.sessions)) S.sessions = d.sessions.filter((x) => x && SESSIONS[x.type] && Array.isArray(x.sets));
         if (d.current && SESSIONS[d.current.type] && Array.isArray(d.current.sets)) S.current = d.current;
       }
@@ -1462,19 +2185,85 @@ body[data-phase="work"] .swap { color: var(--fg); }
   }
   let reduceMotion = false;
   try { reduceMotion = window.matchMedia("(prefers-reduced-motion: reduce)").matches; } catch (e) {}
+  // 3D coach figure (male or female), drawn by one shared WebGL renderer and copied into each figure box.
+  // Capped at 30 fps, redrawn only when the pose changes, resolution drops if the phone struggles; falls back to the stick figure.
+  const FIG = { failed: false, draw: null, glc: null, scale: Math.min(2, window.devicePixelRatio || 1), max: Math.min(2, window.devicePixelRatio || 1), ema: 0, slow: 0, tuneAt: 0 };
+  function figReady() {
+    if (FIG.failed) return false;
+    if (FIG.draw) return true;
+    try {
+      if (typeof AV3D === "undefined") throw new Error("no 3D");
+      FIG.glc = document.createElement("canvas"); FIG.glc.width = 64; FIG.glc.height = 64;
+      FIG.draw = AV3D.makeRenderer(FIG.glc);
+      AV3D.setAnim(ANIM);
+      FIG.glc.addEventListener("webglcontextlost", (e) => { e.preventDefault(); figFail(); });
+      return true;
+    } catch (e) { figFail(); return false; }
+  }
+  function figFail() {
+    FIG.failed = true; FIG.draw = null;
+    document.querySelectorAll("[data-fig]").forEach((el) => { el._cv = null; el._sig = null; });
+  }
+  // The first figure on screen shows the WebGL canvas itself (no copying). Any others (the #figures gallery) get a copy.
+  function figPaint(el, key, k, mirror, primary) {
+    const cw = el.clientWidth, ch = el.clientHeight;
+    if (!cw || !ch) return false;
+    const g = FIG.glc, w = Math.max(1, Math.round(cw * FIG.scale)), h = Math.max(1, Math.round(ch * FIG.scale));
+    let cv = el._cv;
+    if (primary) {
+      if (g.parentNode !== el) { el.innerHTML = ""; g.setAttribute("role", "img"); g.setAttribute("aria-label", "Exercise demonstration"); el.appendChild(g); el._cv = g; el._sig = null; }
+      if (g.width !== w || g.height !== h) { g.width = w; g.height = h; el._sig = null; }
+      cv = g;
+    } else {
+      if (!cv || cv === g || cv.parentNode !== el) {
+        el.innerHTML = ""; cv = document.createElement("canvas");
+        cv.setAttribute("role", "img"); cv.setAttribute("aria-label", "Exercise demonstration");
+        el.appendChild(cv); el._cv = cv; el._sig = null;
+      }
+      if (g.width < w || g.height < h) return false;
+      if (cv.width !== w || cv.height !== h) { cv.width = w; cv.height = h; el._sig = null; }
+    }
+    const sig = key + (mirror ? "m" : "") + Math.round(k * 200) + S.fig;
+    if (el._sig === sig) return false;
+    try {
+      FIG.draw({ pose: key, k: k, sex: S.fig, mirror: mirror, w: w, h: h });
+      if (!primary) { const ctx = cv.getContext("2d"); ctx.clearRect(0, 0, w, h); ctx.drawImage(g, 0, g.height - h, w, h, 0, 0, w, h); }
+    } catch (e) { figFail(); return false; }
+    el._sig = sig;
+    return true;
+  }
+  function figTune(now) {
+    if (now - FIG.tuneAt < 1000) return;
+    FIG.tuneAt = now;
+    if (FIG.ema > 40 && FIG.scale > 0.75) FIG.scale = Math.max(0.75, FIG.scale * 0.8);
+    else if (FIG.ema < 14 && FIG.scale < FIG.max) FIG.scale = Math.min(FIG.max, FIG.scale * 1.1);
+    FIG.slow = FIG.ema > 150 && FIG.scale <= 0.75 ? FIG.slow + 1 : 0;
+    if (FIG.slow >= 3 && !TEST) figFail();
+  }
+  let figLast = 0, figFrameAt = 0;
   function animate() {
-    const figs = document.querySelectorAll("[data-fig]"), now = performance.now() / 1000;
-    figs.forEach((el) => {
+    const figs = Array.from(document.querySelectorAll("[data-fig]")), nowMs = performance.now(), now = nowMs / 1000;
+    const use3d = figs.length > 0 && figReady(), due = nowMs - figLast >= 33;
+    // frame-to-frame time while drawing: the GPU work shows up here rather than in the draw call
+    if (use3d && figFrameAt) { const gap = nowMs - figFrameAt; if (gap < 2000) FIG.ema = FIG.ema * 0.8 + Math.max(0, gap - 16.7) * 0.2; }
+    figFrameAt = 0;
+    let drew = false;
+    // secondary figures first, the on-screen WebGL one last so it keeps its own picture
+    figs.slice(1).concat(figs.slice(0, 1)).forEach((el) => {
       const key = el.getAttribute("data-fig"), mode = el.getAttribute("data-mode");
       let k, mirror = false;
       if (mode === "set" && C && C.phase === "set") {
         const p = setPlan(SETS[C.k].ex), e = Math.max(0, ((C.paused ? C.pausedAt : Date.now()) - C.t0) / 1000), pos = setPos(p, e);
         mirror = pos.side === 1 || (pos.gap && pos.side === 0);
         k = pos.gap || pos.done ? 0 : blendAt(key, pos.local);
-      } else k = reduceMotion ? 1 : blendAt(key, now);
+      } else if (mode === "still") k = +el.getAttribute("data-k") || 0;
+      else k = reduceMotion ? 1 : blendAt(key, now);
+      if (use3d) { if ((due || !el._cv) && figPaint(el, key, k, mirror, el === figs[0])) drew = true; return; }
+      if (el._cv) { el._cv = null; el._sig = null; }
       const sig = key + (mirror ? "m" : "") + Math.round(k * 200);
       if (el._sig !== sig) { el._sig = sig; el.innerHTML = figureSVG(key, k, mirror); }
     });
+    if (drew) { figLast = nowMs; figFrameAt = nowMs; figTune(nowMs); }
     requestAnimationFrame(animate);
   }
 
@@ -1864,6 +2653,8 @@ body[data-phase="work"] .swap { color: var(--fg); }
       h += "</div>";
     });
     h += '</div><p class="tap-hint">Tap an exercise to see how it moves.</p>';
+    if (!FIG.failed) h += '<div class="field"><span class="label" id="figLbl">Coach figure</span><div class="seg" role="group" aria-labelledby="figLbl">' +
+      [["m", "Male"], ["f", "Female"]].map(([v, l]) => '<button type="button" data-act="fig-sex" data-sex="' + v + '" aria-pressed="' + (S.fig === v) + '">' + l + "</button>").join("") + "</div></div>";
     h += '<div class="field"><span class="label" id="restLbl">Rest between rounds</span><div class="seg" role="group" aria-labelledby="restLbl">' +
       RESTS.map((r) => '<button type="button" data-act="rest-opt" data-rest="' + r + '" aria-pressed="' + (S.rest === r) + '">' + r + " s</button>").join("") + "</div></div>";
     h += '<div class="panel"><div class="panel-row"><div><p class="status">Voice coach</p><p class="status-note">Counts at 2 seconds down, 1 up. Test the volume with your headphones.</p></div>' +
@@ -2014,7 +2805,7 @@ body[data-phase="work"] .swap { color: var(--fg); }
   function renderGallery() {
     document.body.setAttribute("data-phase", "idle");
     const k = location.search.includes("k=1") ? 1 : 0;
-    app.innerHTML = '<div class="gallery">' + Object.keys(ANIM).map((a) => "<div>" + a + '<div class="fig">' + figureSVG(a, k, false) + "</div></div>").join("") + "</div>";
+    app.innerHTML = '<div class="gallery">' + Object.keys(ANIM).map((a) => "<div>" + a + '<div class="fig" data-fig="' + a + '" data-mode="still" data-k="' + k + '"></div></div>').join("") + "</div>";
   }
 
   // =====================================================================
@@ -2064,6 +2855,7 @@ body[data-phase="work"] .swap { color: var(--fg); }
       // strength
       case "stype": ui.sType = b.getAttribute("data-type"); ui.preview = null; render(); break;
       case "rest-opt": S.rest = +b.getAttribute("data-rest"); saveStrength(); render(); break;
+      case "fig-sex": S.fig = b.getAttribute("data-sex") === "f" ? "f" : "m"; saveStrength(); render(); break;
       case "preview": { const id = b.getAttribute("data-id"); ui.preview = ui.preview === id ? null : id; render(); break; }
       case "test-voice-lift": say("One. Two. Three. Rest. Next: bench press. 18 kilos each hand."); beep(620, 0.05, 0.15); break;
       case "lift-start": sStart(); break;
