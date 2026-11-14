@@ -1,0 +1,1161 @@
+<!doctype html>
+<html lang="en-GB">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+<meta name="apple-mobile-web-app-title" content="Strength">
+<meta name="theme-color" content="#F2F4F1">
+<title>Sub-41 Strength Coach</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Archivo:wght@400;500;600;700&family=Big+Shoulders+Display:wght@700;800;900&display=swap">
+<style>
+/* Layout: one-screen gym coach. Start screen holds the plan; in a session one exercise fills the screen with a moving figure in time with the count. Blue = working set, sage = rest, neutral = getting ready. */
+:root {
+  --ink: #1A1D2E;
+  --ink-soft: #4F566B;
+  --line: #CBD0DA;
+  --surface: #F2F4F1;
+  --card: #FFFFFF;
+  --accent: #2340F0;
+  --on-accent: #FFFFFF;
+  --work: #2340F0;
+  --on-work: #FFFFFF;
+  --on-work-soft: rgba(255, 255, 255, 0.84);
+  --work-card: rgba(255, 255, 255, 0.14);
+  --rest: #D8E4DE;
+  --rest-card: #EDF3EF;
+  --on-rest: #1A1D2E;
+  --on-rest-soft: #46524D;
+  --chip: #DDE3FC;
+  --warn: #9A4A12;
+  --font-display: "Big Shoulders Display", "Arial Narrow", "Roboto Condensed", Impact, sans-serif;
+  --font-ui: "Archivo", system-ui, -apple-system, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
+  color-scheme: light;
+}
+@media (prefers-color-scheme: dark) {
+  :root {
+    --ink: #E8EBF2;
+    --ink-soft: #A2A9BD;
+    --line: #2F3447;
+    --surface: #141724;
+    --card: #1D2132;
+    --accent: #3D58F6;
+    --work: #2038D8;
+    --rest: #17251F;
+    --rest-card: #1F3129;
+    --on-rest: #E3EDE8;
+    --on-rest-soft: #9FB3AA;
+    --chip: #283163;
+    --warn: #F2A46B;
+    color-scheme: dark;
+  }
+}
+
+*, *::before, *::after { box-sizing: border-box; }
+[hidden] { display: none !important; }
+html { height: 100%; -webkit-text-size-adjust: 100%; }
+body {
+  --bg: var(--surface);
+  --fg: var(--ink);
+  --fg-soft: var(--ink-soft);
+  --panel: var(--card);
+  height: 100%;
+  margin: 0;
+  padding-top: env(safe-area-inset-top, 0px);
+  padding-bottom: env(safe-area-inset-bottom, 0px);
+  background: var(--bg);
+  color: var(--fg);
+  font-family: var(--font-ui);
+  font-size: 1rem;
+  line-height: 1.45;
+  -webkit-font-smoothing: antialiased;
+  -webkit-tap-highlight-color: transparent;
+  transition: background-color 0.3s ease, color 0.3s ease;
+}
+body[data-phase="set"] { --bg: var(--work); --fg: var(--on-work); --fg-soft: var(--on-work-soft); --panel: var(--work-card); }
+body[data-phase="rest"],
+body[data-phase="done"] { --bg: var(--rest); --fg: var(--on-rest); --fg-soft: var(--on-rest-soft); --panel: var(--rest-card); }
+
+#app {
+  height: 100%;
+  max-width: 34rem;
+  margin: 0 auto;
+  padding-left: max(16px, env(safe-area-inset-left, 0px));
+  padding-right: max(16px, env(safe-area-inset-right, 0px));
+  display: flex;
+  flex-direction: column;
+}
+.view { flex: 1; min-height: 0; display: flex; flex-direction: column; }
+p { margin: 0; }
+h1, h2, h3 { margin: 0; }
+.soft { color: var(--fg-soft); }
+
+/* Controls */
+button, select, input { font: inherit; color: inherit; }
+.btn {
+  appearance: none;
+  font-weight: 700;
+  font-size: 1.05rem;
+  min-height: 3.25rem;
+  padding: 0 1rem;
+  border-radius: 0.875rem;
+  border: 2px solid var(--fg);
+  background: transparent;
+  color: var(--fg);
+  cursor: pointer;
+  touch-action: manipulation;
+}
+.btn.primary { background: var(--accent); border-color: var(--accent); color: var(--on-accent); }
+body[data-phase="set"] .btn.primary { background: var(--fg); border-color: var(--fg); color: var(--bg); }
+.btn.wide { width: 100%; min-height: 4rem; font-size: 1.25rem; }
+.btn.small { min-height: 2.75rem; font-size: 0.95rem; padding: 0 0.9rem; white-space: nowrap; }
+.btn:active { transform: translateY(1px); }
+.link-btn {
+  appearance: none;
+  background: none;
+  border: 0;
+  padding: 0.5rem 0.25rem;
+  min-height: 2.75rem;
+  font-weight: 600;
+  text-decoration: underline;
+  text-underline-offset: 0.2em;
+  cursor: pointer;
+  touch-action: manipulation;
+}
+.btn:focus-visible, .link-btn:focus-visible, .seg button:focus-visible, select:focus-visible, .row:focus-visible, .step-btn:focus-visible, input:focus-visible { outline: 3px solid var(--accent); outline-offset: 2px; }
+body[data-phase="set"] .btn:focus-visible, body[data-phase="set"] .step-btn:focus-visible { outline-color: var(--fg); }
+
+.label { font-size: 0.78rem; font-weight: 600; letter-spacing: 0.06em; text-transform: uppercase; color: var(--fg-soft); }
+.seg { display: flex; border: 2px solid var(--fg); border-radius: 0.75rem; overflow: hidden; }
+.seg button {
+  flex: 1;
+  appearance: none;
+  border: 0;
+  background: transparent;
+  min-height: 2.75rem;
+  padding: 0 0.3rem;
+  font-weight: 700;
+  cursor: pointer;
+  touch-action: manipulation;
+  font-variant-numeric: tabular-nums;
+}
+.seg button + button { border-left: 2px solid var(--fg); }
+.seg button[aria-pressed="true"] { background: var(--fg); color: var(--bg); }
+.select-wrap { position: relative; }
+.select-wrap::after {
+  content: "";
+  position: absolute;
+  right: 0.9rem;
+  top: 50%;
+  width: 0.5rem;
+  height: 0.5rem;
+  border-right: 2px solid var(--fg);
+  border-bottom: 2px solid var(--fg);
+  transform: translateY(-70%) rotate(45deg);
+  pointer-events: none;
+}
+select {
+  appearance: none;
+  -webkit-appearance: none;
+  width: 100%;
+  font-weight: 700;
+  min-height: calc(2.75rem + 4px);
+  padding: 0 2.25rem 0 0.75rem;
+  border: 2px solid var(--fg);
+  border-radius: 0.75rem;
+  background: transparent;
+}
+
+/* Figure */
+.fig { color: var(--fg); display: flex; justify-content: center; }
+.fig svg { display: block; width: 100%; height: 100%; max-width: 100%; }
+.fig-start { height: 11rem; margin: 0.25rem 0 0.5rem; }
+
+/* Start */
+.start { overflow-y: auto; -webkit-overflow-scrolling: touch; gap: 1.4rem; padding-top: 1.25rem; }
+.title {
+  margin-top: 0.35rem;
+  font-family: var(--font-display);
+  font-weight: 900;
+  font-size: 3.5rem;
+  font-size: clamp(3rem, 15vw, 5.5rem);
+  line-height: 0.85;
+  letter-spacing: -0.01em;
+}
+.lede { margin-top: 0.6rem; color: var(--fg-soft); max-width: 38ch; }
+.fields { display: grid; grid-template-columns: 1fr 1fr; gap: 0.75rem; }
+.field { display: flex; flex-direction: column; gap: 0.35rem; min-width: 0; }
+.week-note { font-size: 0.95rem; color: var(--fg-soft); margin-top: -0.75rem; }
+.notice, .panel { background: var(--panel); border-radius: 1rem; padding: 1rem; display: flex; flex-direction: column; gap: 0.7rem; }
+.notice-title, .status { font-weight: 700; }
+.notice-actions { display: grid; grid-template-columns: 1fr 1fr; gap: 0.6rem; }
+.panel-row { display: flex; align-items: center; justify-content: space-between; gap: 0.75rem; }
+.panel-row > div { min-width: 0; }
+.status-note { font-size: 0.9rem; color: var(--fg-soft); }
+.plan { display: flex; flex-direction: column; gap: 1.1rem; }
+.pair { border-top: 3px solid var(--fg); padding-top: 0.35rem; }
+.pair-head { display: flex; justify-content: space-between; }
+.row {
+  appearance: none;
+  width: 100%;
+  background: none;
+  border: 0;
+  border-bottom: 1px solid var(--line);
+  text-align: left;
+  display: grid;
+  grid-template-columns: 2.4rem minmax(0, 1fr) auto;
+  gap: 0.5rem;
+  align-items: baseline;
+  padding: 0.55rem 0;
+  cursor: pointer;
+  touch-action: manipulation;
+}
+.pair .row:last-of-type { border-bottom: 0; }
+.row .tag { font-family: var(--font-display); font-weight: 800; font-size: 1.35rem; line-height: 1; }
+.row .nm { font-weight: 600; min-width: 0; }
+.row .dose { display: block; font-weight: 400; font-size: 0.9rem; color: var(--fg-soft); }
+.row .kg { text-align: right; font-weight: 700; white-space: nowrap; font-variant-numeric: tabular-nums; }
+.row .kg .soft { font-weight: 500; font-size: 0.9rem; }
+.row[aria-expanded="true"] .nm { text-decoration: underline; text-underline-offset: 0.2em; }
+.chip { display: inline-block; margin-left: 0.3rem; padding: 0.05rem 0.45rem; border-radius: 999px; font-size: 0.75rem; font-weight: 700; background: var(--chip); color: var(--fg); vertical-align: 0.1em; }
+.tap-hint { font-size: 0.85rem; color: var(--fg-soft); margin-top: -0.6rem; }
+.history h2 { font-family: var(--font-display); font-weight: 800; font-size: 1.9rem; line-height: 1; margin-bottom: 0.4rem; }
+.history details { border-top: 1px solid var(--line); }
+.history details:last-of-type { border-bottom: 1px solid var(--line); }
+.history summary { display: flex; justify-content: space-between; gap: 1rem; padding: 0.7rem 0; min-height: 2.75rem; cursor: pointer; list-style: none; font-weight: 600; }
+.history summary::-webkit-details-marker { display: none; }
+.history summary .soft { font-weight: 500; white-space: nowrap; }
+.history ul { list-style: none; margin: 0 0 0.75rem; padding: 0; font-size: 0.92rem; }
+.history li { display: flex; justify-content: space-between; gap: 1rem; padding: 0.15rem 0; font-variant-numeric: tabular-nums; }
+.history li span:first-child { color: var(--fg-soft); min-width: 0; }
+.history li span:last-child { font-weight: 600; white-space: nowrap; }
+.fine { font-size: 0.85rem; color: var(--fg-soft); }
+.sticky-bar { position: sticky; bottom: 0; margin-top: auto; padding: 0.75rem 0 1rem; background: var(--bg); }
+
+/* Session */
+.run { padding-top: 0.4rem; }
+.run-top { display: flex; justify-content: space-between; align-items: center; gap: 0.75rem; }
+.run-top .meta { font-size: 0.85rem; font-weight: 600; color: var(--fg-soft); font-variant-numeric: tabular-nums; text-align: right; line-height: 1.3; }
+.prog { height: 0.35rem; border-radius: 0.2rem; background: rgba(127, 127, 127, 0.28); overflow: hidden; margin-top: 0.25rem; }
+.prog > div { height: 100%; background: var(--fg); transform-origin: left center; }
+.banner { margin-top: 0.5rem; background: var(--panel); border-radius: 0.75rem; padding: 0.55rem 0.8rem; font-size: 0.9rem; font-weight: 600; }
+.stage { flex: 1; min-height: 0; overflow-y: auto; -webkit-overflow-scrolling: touch; display: flex; flex-direction: column; }
+.stage-inner { margin-block: auto; display: flex; flex-direction: column; gap: 0.6rem; padding-block: 0.75rem; }
+.tagline { display: flex; align-items: center; gap: 0.6rem; font-weight: 600; color: var(--fg-soft); flex-wrap: wrap; }
+.tag-pill { font-family: var(--font-display); font-weight: 800; font-size: 1.3rem; line-height: 1; padding: 0.3rem 0.55rem 0.25rem; border-radius: 0.5rem; background: var(--fg); color: var(--bg); }
+.ex-name { font-family: var(--font-display); font-weight: 800; font-size: 2.3rem; font-size: clamp(2rem, 9vw, 3rem); line-height: 0.95; text-wrap: balance; }
+.cue { color: var(--fg-soft); font-weight: 500; }
+.fig-set { height: clamp(9.5rem, 27vh, 15rem); }
+.fig-next { height: clamp(8rem, 21vh, 12rem); }
+.counter { display: flex; align-items: baseline; gap: 0.6rem; flex-wrap: wrap; }
+.counter .num { font-family: var(--font-display); font-weight: 900; font-size: 6.5rem; font-size: clamp(5.5rem, 28vw, 8.5rem); line-height: 0.8; letter-spacing: -0.02em; font-variant-numeric: tabular-nums; }
+.counter .of { font-family: var(--font-display); font-weight: 800; font-size: 2rem; line-height: 1; color: var(--fg-soft); }
+.counter .side { font-weight: 700; margin-left: auto; text-align: right; }
+.extra { font-weight: 700; }
+body.is-paused .counter .num, body.is-paused .count-big { opacity: 0.35; }
+.bar { height: 0.55rem; border-radius: 0.3rem; background: rgba(127, 127, 127, 0.28); overflow: hidden; }
+.bar > div { height: 100%; background: var(--fg); transform-origin: left center; transform: scaleX(0); }
+.count-big { font-family: var(--font-display); font-weight: 900; font-size: 6rem; font-size: clamp(5rem, 26vw, 8rem); line-height: 0.8; letter-spacing: -0.02em; font-variant-numeric: tabular-nums; }
+.lead-word { font-weight: 700; font-size: 1.1rem; color: var(--fg-soft); }
+.next-card { background: var(--panel); border-radius: 1rem; padding: 0.9rem 1rem 1rem; display: flex; flex-direction: column; gap: 0.45rem; }
+.next-card .ex-name { font-size: 2rem; }
+.weight { display: flex; flex-direction: column; gap: 0.35rem; }
+.stepper { display: grid; grid-template-columns: 3.25rem minmax(0, 1fr) 3.25rem; align-items: center; gap: 0.5rem; }
+.step-btn {
+  height: 3.25rem;
+  border-radius: 0.875rem;
+  border: 2px solid var(--fg);
+  background: transparent;
+  font-size: 1.8rem;
+  font-weight: 600;
+  line-height: 1;
+  cursor: pointer;
+  touch-action: manipulation;
+}
+.kg-wrap { display: flex; align-items: baseline; justify-content: center; gap: 0.3rem; min-width: 0; }
+.kg-input {
+  width: 4ch;
+  min-width: 0;
+  padding: 0;
+  border: 0;
+  border-bottom: 3px solid var(--fg);
+  border-radius: 0;
+  background: transparent;
+  color: var(--fg);
+  font-family: var(--font-display);
+  font-weight: 900;
+  font-size: 3.25rem;
+  line-height: 1;
+  text-align: center;
+  font-variant-numeric: tabular-nums;
+}
+.kg-input::placeholder { color: var(--fg-soft); opacity: 0.6; }
+.kg-unit { font-weight: 700; }
+.weight-note { font-size: 0.9rem; color: var(--fg-soft); }
+.err { color: var(--warn); font-weight: 700; font-size: 0.95rem; }
+.err:empty { display: none; }
+.set-weight { display: flex; align-items: center; justify-content: space-between; gap: 0.75rem; background: var(--panel); border-radius: 0.875rem; padding: 0.5rem 0.6rem 0.5rem 0.9rem; }
+.set-weight strong { font-family: var(--font-display); font-weight: 800; font-size: 1.6rem; line-height: 1; font-variant-numeric: tabular-nums; }
+.set-weight .mini { display: flex; gap: 0.4rem; }
+.set-weight .step-btn { height: 2.75rem; width: 2.75rem; font-size: 1.5rem; }
+.swap { font-size: 0.9rem; font-weight: 600; color: var(--warn); }
+body[data-phase="set"] .swap { color: var(--fg); }
+.warm-list { margin: 0; padding: 0; list-style: none; display: flex; flex-direction: column; gap: 0.5rem; }
+.warm-list li { padding: 0.8rem 1rem; background: var(--panel); border-radius: 0.75rem; font-weight: 600; }
+.controls { display: grid; gap: 0.6rem; padding: 0.5rem 0 1rem; }
+.controls.two { grid-template-columns: 1fr 1.5fr; }
+.confirm { background: var(--panel); border-radius: 1rem; padding: 1rem; display: flex; flex-direction: column; gap: 0.6rem; margin-bottom: 1rem; }
+.confirm .q { font-weight: 700; font-size: 1.1rem; }
+.confirm .link-btn { align-self: center; }
+
+/* Done */
+.done { overflow-y: auto; -webkit-overflow-scrolling: touch; gap: 1.1rem; padding-top: 1.75rem; }
+.done-title { font-family: var(--font-display); font-weight: 900; font-size: 5rem; font-size: clamp(4rem, 22vw, 7rem); line-height: 0.8; }
+.done-meta { font-weight: 600; font-size: 1.1rem; }
+.summary { list-style: none; margin: 0; padding: 0; }
+.summary li { display: flex; justify-content: space-between; gap: 1rem; padding: 0.55rem 0; border-top: 1px solid rgba(127, 127, 127, 0.35); }
+.summary li span:first-child { min-width: 0; }
+.summary li span:last-child { font-weight: 700; white-space: nowrap; font-variant-numeric: tabular-nums; text-align: right; }
+.done-next { color: var(--fg-soft); max-width: 40ch; }
+.copy-box { width: 100%; min-height: 8rem; font: 0.85rem/1.4 ui-monospace, Menlo, monospace; border-radius: 0.75rem; border: 1px solid var(--line); padding: 0.6rem; background: var(--panel); color: var(--fg); }
+
+/* Figure gallery (test view) */
+.gallery { display: grid; grid-template-columns: 1fr 1fr; gap: 0.5rem; padding: 1rem 0; overflow-y: auto; }
+.gallery div { border: 1px solid var(--line); border-radius: 0.5rem; padding: 0.25rem; font-size: 0.75rem; }
+.gallery .fig { height: 8rem; }
+
+.sr-only { position: absolute; width: 1px; height: 1px; padding: 0; margin: -1px; overflow: hidden; clip: rect(0, 0, 0, 0); white-space: nowrap; border: 0; }
+@media (max-width: 360px) { .fields { grid-template-columns: 1fr; } }
+@media (prefers-reduced-motion: reduce) { body { transition: none; } }
+</style>
+</head>
+<body data-phase="idle">
+<main id="app"></main>
+<p id="live" class="sr-only" aria-live="polite"></p>
+
+<script>
+(() => {
+  "use strict";
+
+  // ---------- Plan ----------
+  const PLAN_START = new Date(2026, 10, 16); // Monday 16 Nov 2026, week 1
+  const STEP = 2, KEY = "sub41-coach-v1", RESTS = [45, 60, 75, 90];
+  const READY = 15, CHANGE = 20, GO = 5, GAP = 5;
+  const PAIRS = "ABC";
+
+  const EX = {
+    "a-split":   { name: "Rear-foot elevated split squat", say: "split squat", cue: "Back foot on the bench", reps: 8, per: "leg", load: "pair", legs: true, anim: "split", swap: "Hip at 4/10 or more? Do step-ups instead." },
+    "a-row":     { name: "Single-arm dumbbell row", say: "single-arm row", cue: "Free hand on the bench", reps: 10, per: "arm", load: "single", anim: "row1" },
+    "a-rdl":     { name: "Dumbbell Romanian deadlift", say: "Romanian deadlift", cue: "Push your hips back, soft knees", reps: 10, load: "pair", legs: true, anim: "rdl", swap: "Hip at 4/10 or more? Do hip thrusts instead." },
+    "a-bench":   { name: "Dumbbell bench press", say: "bench press", cue: "Flat bench, feet on the floor", reps: 8, max: 10, load: "pair", anim: "bench" },
+    "a-plank":   { name: "Side plank with top-leg lift", say: "side plank", cue: "Hips high, lift the top leg slowly", hold: 30, per: "side", load: "none", anim: "plank" },
+    "a-calf":    { name: "Single-leg calf raise", say: "calf raise", cue: "Hold a dumbbell, or set 0 for bodyweight", reps: 15, per: "leg", load: "single", legs: true, allowZero: true, anim: "calf" },
+    "b-step":    { name: "Step-up onto the bench", say: "step-up", cue: "Drive up, slow on the way down", reps: 8, per: "leg", load: "pair", legs: true, anim: "step" },
+    "b-incline": { name: "Incline dumbbell press", say: "incline press", cue: "Bench on an incline", reps: 10, load: "pair", anim: "incline" },
+    "b-slrdl":   { name: "Single-leg Romanian deadlift", say: "single-leg deadlift", cue: "Dumbbell in the hand opposite the standing leg", reps: 8, per: "leg", load: "single", legs: true, anim: "slrdl", swap: "Hip at 4/10 or more? Do marching glute bridges instead." },
+    "b-row":     { name: "Chest-supported row", say: "chest-supported row", cue: "Face down on the incline bench", reps: 10, max: 12, load: "pair", anim: "row2" },
+    "b-thrust":  { name: "Dumbbell hip thrust", say: "hip thrust", cue: "Shoulders on the bench, dumbbell on your hips", reps: 12, load: "single", legs: true, anim: "thrust" },
+    "b-march":   { name: "Suitcase march", say: "suitcase march", cue: "One heavy dumbbell, stand tall", hold: 30, per: "hand", load: "single", anim: "march" }
+  };
+  const SESSIONS = {
+    A: { name: "Strength A", day: "Monday", pairs: [["a-split", "a-row"], ["a-rdl", "a-bench"], ["a-plank", "a-calf"]] },
+    B: { name: "Strength B", day: "Thursday", pairs: [["b-step", "b-incline"], ["b-slrdl", "b-row"], ["b-thrust", "b-march"]] }
+  };
+  const WARMUP = ["Glute bridge × 12", "90/90 hip switches × 6 per side", "Dead bug × 6 per side"];
+  const SWITCH = { leg: "Switch legs.", arm: "Switch arms.", side: "Switch sides.", hand: "Switch hands." };
+
+  // ---------- Figures ----------
+  // Side-view figure: poses set the hip, torso angle, ankle targets and hand targets; knees and elbows are solved.
+  const L = { torso: 52, neck: 8, head: 10, ua: 28, fa: 26, th: 38, sh: 36, ft: 12 };
+  const sh = (x, y, b) => ({ to: "sh", p: [x, y], b: b == null ? 1 : b });
+  const hp = (x, y, b) => ({ to: "hip", p: [x, y], b: b == null ? 1 : b });
+  const ab = (x, y, b) => ({ to: "abs", p: [x, y], b: b == null ? 1 : b });
+  const BENCH = (x, y, w) => [["r", x, y, w, 8], ["l", x + 7, y + 8, x + 7, 158, 6], ["l", x + w - 7, y + 8, x + w - 7, 158, 6]];
+  const ANIM = {
+    split: { tempo: [2, 1], bench: BENCH(26, 126, 50), db: ["n", "f"], p: [
+      { hip: [112, 90], torso: -86, n: [148, 154, 8], f: [66, 122, 175], an: sh(3, 50), af: sh(1, 50) },
+      { hip: [104, 120], torso: -80, n: [148, 154, 8], f: [66, 122, 175], an: sh(3, 50), af: sh(1, 50) }] },
+    row1: { tempo: [1, 2], bench: BENCH(160, 118, 58), db: ["n"], p: [
+      { hip: [100, 92], torso: -25, n: [114, 154, 5], f: [86, 154, 5], an: sh(0, 50), af: ab(172, 116) },
+      { hip: [100, 92], torso: -25, n: [114, 154, 5], f: [86, 154, 5], an: sh(-24, 16), af: ab(172, 116) }] },
+    rdl: { tempo: [2, 1], db: ["n", "f"], p: [
+      { hip: [120, 84], torso: -88, n: [124, 154, 8], f: [119, 154, 8], an: sh(3, 50), af: sh(1, 50) },
+      { hip: [104, 90], torso: -28, n: [124, 154, 8], f: [119, 154, 8], an: sh(0, 50), af: sh(-2, 50) }] },
+    bench: { tempo: [2, 1], bench: BENCH(58, 111, 112), db: ["n", "f"], p: [
+      { hip: [150, 104], torso: 180, n: [184, 154, 5], f: [178, 154, 5], an: sh(2, -50), af: sh(0, -50) },
+      { hip: [150, 104], torso: 180, n: [184, 154, 5], f: [178, 154, 5], an: sh(4, -18), af: sh(2, -18) }] },
+    plank: { tempo: [1, 2], db: [], p: [
+      { hip: [132, 140], torso: -166.5, n: [198, 150, 10], f: [200, 154, 10], an: hp(-4, -14, -1), af: ab(106, 156) },
+      { hip: [132, 140], torso: -166.5, n: [194, 116, -10], f: [200, 154, 10], an: hp(-4, -14, -1), af: ab(106, 156) }] },
+    calf: { tempo: [1, 2], db: ["n"], p: [
+      { hip: [120, 84], torso: -90, n: [122, 154, 10], f: [104, 128, 150], an: sh(3, 50), af: sh(1, 50) },
+      { hip: [120, 76], torso: -90, n: [124, 146, 40], f: [104, 120, 150], an: sh(3, 50), af: sh(1, 50) }] },
+    step: { tempo: [1, 2], bench: BENCH(130, 128, 72), db: ["n", "f"], p: [
+      { hip: [118, 88], torso: -84, n: [150, 124, 5], f: [112, 154, 5], an: sh(4, 50), af: sh(2, 50) },
+      { hip: [148, 56], torso: -86, n: [150, 124, 5], f: [138, 116, 20], an: sh(4, 50), af: sh(2, 50) }] },
+    incline: { tempo: [2, 1], bench: [["r", 112, 118, 52, 8], ["l", 138, 126, 138, 158, 6], ["l", 125, 120, 85, 80, 9], ["l", 105, 100, 105, 158, 6]], db: ["n", "f"], p: [
+      { hip: [130, 112], torso: -135, n: [178, 154, 5], f: [172, 154, 5], an: sh(16, -48), af: sh(14, -48) },
+      { hip: [130, 112], torso: -135, n: [178, 154, 5], f: [172, 154, 5], an: sh(16, -8), af: sh(14, -8) }] },
+    slrdl: { tempo: [2, 1], db: ["f"], p: [
+      { hip: [120, 84], torso: -88, n: [124, 154, 8], f: [114, 148, 20], an: sh(2, 50), af: sh(0, 50) },
+      { hip: [110, 90], torso: -6, n: [124, 154, 8], f: [40, 98, 100], an: sh(0, 50), af: sh(-2, 50) }] },
+    row2: { tempo: [1, 2], bench: [["l", 112, 110, 145, 87, 9], ["l", 131, 97, 131, 158, 6], ["l", 112, 158, 150, 158, 6]], db: ["n", "f"], p: [
+      { hip: [110, 100], torso: -35, n: [72, 154, 0], f: [78, 154, 0], an: sh(0, 50), af: sh(2, 50) },
+      { hip: [110, 100], torso: -35, n: [72, 154, 0], f: [78, 154, 0], an: sh(-22, 14), af: sh(-20, 14) }] },
+    thrust: { tempo: [1, 2], bench: BENCH(26, 120, 64), db: ["n"], p: [
+      { hip: [130, 148], torso: -144.5, n: [164, 154, 5], f: [158, 154, 5], an: hp(-6, -12, -1), af: hp(-8, -12, -1) },
+      { hip: [140, 118], torso: 180, n: [164, 154, 5], f: [158, 154, 5], an: hp(-6, -12, -1), af: hp(-8, -12, -1) }] },
+    march: { tempo: [1, 1], db: ["n"], p: [
+      { hip: [120, 84], torso: -90, n: [136, 120, 10], f: [118, 154, 8], an: sh(3, 50), af: sh(6, 46) },
+      { hip: [120, 84], torso: -90, n: [122, 154, 8], f: [136, 120, 10], an: sh(3, 50), af: sh(-4, 48) }] }
+  };
+
+  const rad = (a) => a * Math.PI / 180;
+  const dirv = (a) => [Math.cos(rad(a)), Math.sin(rad(a))];
+  const lerp = (a, b, k) => a + (b - a) * k;
+  const lerpAng = (a, b, k) => a + ((((b - a) % 360) + 540) % 360 - 180) * k;
+  const ease = (x) => x * x * (3 - 2 * x);
+  function ik(A, T, l1, l2, bend) {
+    const vx = T[0] - A[0], vy = T[1] - A[1], d0 = Math.hypot(vx, vy) || 0.001;
+    const d = Math.min(l1 + l2 - 0.5, Math.max(Math.abs(l1 - l2) + 0.5, d0));
+    const ux = vx / d0, uy = vy / d0;
+    const a = (l1 * l1 - l2 * l2 + d * d) / (2 * d), h = Math.sqrt(Math.max(0, l1 * l1 - a * a));
+    const px = -uy * bend, py = ux * bend;
+    return [[A[0] + ux * a + px * h, A[1] + uy * a + py * h], [A[0] + ux * d, A[1] + uy * d]];
+  }
+  const f1 = (n) => Math.round(n * 10) / 10;
+  const pts = (arr) => arr.map((p) => f1(p[0]) + "," + f1(p[1])).join(" ");
+  function figureSVG(key, k, mirror) {
+    const A = ANIM[key], P0 = A.p[0], P1 = A.p[1];
+    const hip = [lerp(P0.hip[0], P1.hip[0], k), lerp(P0.hip[1], P1.hip[1], k)];
+    const tor = lerpAng(P0.torso, P1.torso, k), td = dirv(tor);
+    const shd = [hip[0] + td[0] * L.torso, hip[1] + td[1] * L.torso];
+    const neck = [shd[0] + td[0] * L.neck, shd[1] + td[1] * L.neck];
+    const head = [shd[0] + td[0] * (L.neck + L.head), shd[1] + td[1] * (L.neck + L.head)];
+    const leg = (s) => {
+      const a = P0[s], b = P1[s];
+      const T = [lerp(a[0], b[0], k), lerp(a[1], b[1], k)], toe = lerpAng(a[2], b[2], k);
+      const [knee, ank] = ik(hip, T, L.th, L.sh, -1), fd = dirv(toe);
+      return [hip, knee, ank, [ank[0] + fd[0] * L.ft, ank[1] + fd[1] * L.ft]];
+    };
+    const arm = (s) => {
+      const a = P0[s], b = P1[s];
+      const base = a.to === "sh" ? shd : a.to === "hip" ? hip : [0, 0];
+      const T = [base[0] + lerp(a.p[0], b.p[0], k), base[1] + lerp(a.p[1], b.p[1], k)];
+      const [elb, hand] = ik(shd, T, L.ua, L.fa, a.b);
+      return [shd, elb, hand];
+    };
+    const ln = arm("an"), lf = arm("af"), gn = leg("n"), gf = leg("f");
+    let s = '<line x1="2" y1="158" x2="238" y2="158" stroke="currentColor" stroke-opacity="0.3" stroke-width="2"/>';
+    (A.bench || []).forEach((b) => {
+      if (b[0] === "r") s += '<rect x="' + b[1] + '" y="' + b[2] + '" width="' + b[3] + '" height="' + b[4] + '" rx="3" fill="currentColor" fill-opacity="0.28"/>';
+      else s += '<line x1="' + b[1] + '" y1="' + b[2] + '" x2="' + b[3] + '" y2="' + b[4] + '" stroke="currentColor" stroke-opacity="0.28" stroke-width="' + b[5] + '" stroke-linecap="round"/>';
+    });
+    const limb = (p, w) => '<polyline points="' + pts(p) + '" fill="none" stroke="currentColor" stroke-width="' + w + '" stroke-linecap="round" stroke-linejoin="round"/>';
+    s += '<g opacity="0.42">' + limb(gf, 9) + limb(lf, 8) + "</g>";
+    s += limb([hip, shd], 14) + limb([shd, neck], 7);
+    s += '<circle cx="' + f1(head[0]) + '" cy="' + f1(head[1]) + '" r="' + L.head + '" fill="currentColor"/>';
+    s += limb(gn, 9) + limb(ln, 8);
+    (A.db || []).forEach((w) => {
+      const h = (w === "n" ? ln : lf)[2];
+      s += '<circle cx="' + f1(h[0]) + '" cy="' + f1(h[1]) + '" r="7" fill="currentColor"' + (w === "f" ? ' fill-opacity="0.7"' : "") + "/>" +
+        '<circle cx="' + f1(h[0]) + '" cy="' + f1(h[1]) + '" r="2.6" fill="var(--bg)"/>';
+    });
+    if (mirror) s = '<g transform="translate(240 0) scale(-1 1)">' + s + "</g>";
+    return '<svg viewBox="0 -34 240 198" role="img" aria-label="Exercise demonstration" preserveAspectRatio="xMidYMid meet">' + s + "</svg>";
+  }
+  // Blend 0..1 for a looping rep at the exercise tempo
+  function blendAt(key, sec) {
+    const t = ANIM[key].tempo, r = ((sec % (t[0] + t[1])) + (t[0] + t[1])) % (t[0] + t[1]);
+    return r < t[0] ? ease(r / t[0]) : 1 - ease((r - t[0]) / t[1]);
+  }
+
+  // ---------- Helpers ----------
+  const $ = (id) => document.getElementById(id);
+  const esc = (s) => String(s).replace(/[&<>"']/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[c]));
+  const pad = (n) => (n < 10 ? "0" : "") + n;
+  const fmtKg = (kg) => String(Math.round(kg * 10) / 10);
+  function parseKg(v) {
+    const s = String(v == null ? "" : v).trim().replace(",", ".");
+    if (s === "") return null;
+    const n = parseFloat(s);
+    if (!isFinite(n) || n < 0 || n > 150) return null;
+    return Math.round(n * 2) / 2;
+  }
+  function fmtClock(ms) {
+    const t = Math.max(0, Math.round(ms / 1000)), m = Math.floor(t / 60);
+    return m + ":" + pad(t % 60);
+  }
+  function fmtDate(iso) {
+    try { return new Date(iso).toLocaleDateString("en-GB", { weekday: "short", day: "numeric", month: "short" }); } catch (e) { return ""; }
+  }
+  function loadLabel(ex) { return ex.load === "pair" ? "each hand" : ex.load === "single" ? "one dumbbell" : ""; }
+  function doseText(ex) {
+    if (ex.hold) return ex.hold + " s per " + ex.per;
+    return (ex.max ? ex.reps + "–" + ex.max : ex.reps) + (ex.per ? " per " + ex.per : " reps");
+  }
+  function currentWeek() {
+    const t = new Date(), d = new Date(t.getFullYear(), t.getMonth(), t.getDate());
+    const days = Math.round((d - PLAN_START) / 864e5);
+    return days < 0 ? 1 : Math.floor(days / 7) + 1;
+  }
+  const isLight = (w) => w === 4 || w === 9;
+  const shortWeek = (w) => (w > 10 ? "After race" : "Week " + w);
+  function weekNote(w, t) {
+    if (w === 10 && t === "B") return "Race week has no Strength B. Do Strength A on Monday, then keep your legs fresh.";
+    if (w === 10) return "Race week: 2 sets of everything, legs about 20% lighter.";
+    if (isLight(w)) return "Lighter week: same weights as last week, 2 sets of the A and B pairs.";
+    if (w > 10) return "Plan complete. Lifts keep going up 2 kg a week.";
+    return "Build week: each lift goes up 2 kg on last week.";
+  }
+  const setsFor = (pi, w) => (pi === 2 ? 2 : (isLight(w) || w === 10) ? 2 : 3);
+  function buildSets(type, w) {
+    const out = [];
+    SESSIONS[type].pairs.forEach((pair, pi) => {
+      const n = setsFor(pi, w);
+      for (let s = 1; s <= n; s++) pair.forEach((id, ei) => out.push({ ex: id, set: s, of: n, tag: PAIRS[pi] + (ei + 1), pos: ei }));
+    });
+    return out;
+  }
+  function setPlan(id) {
+    const ex = EX[id], t = ANIM[ex.anim].tempo, tempo = t[0] + t[1], sides = ex.per ? 2 : 1;
+    if (ex.hold) return { sides, sideDur: ex.hold, gap: GAP, timed: true, tempo };
+    const max = ex.max || ex.reps;
+    return { sides, sideDur: max * tempo, gap: GAP, timed: false, tempo, turn: t[0], target: ex.reps, max };
+  }
+  const setTotal = (p) => p.sides * p.sideDur + (p.sides - 1) * p.gap;
+  function setPos(p, e) {
+    for (let s = 0; s < p.sides; s++) {
+      const s0 = s * (p.sideDur + p.gap);
+      if (e < s0 + p.sideDur) return { side: s, gap: false, local: Math.max(0, e - s0) };
+      if (s < p.sides - 1 && e < s0 + p.sideDur + p.gap) return { side: s, gap: true, local: e - s0 - p.sideDur };
+    }
+    return { side: p.sides - 1, done: true, local: p.sideDur };
+  }
+
+  // ---------- Storage ----------
+  let S = { v: 1, rest: 60, sessions: [], current: null };
+  try {
+    const raw = localStorage.getItem(KEY);
+    if (raw) {
+      const d = JSON.parse(raw);
+      if (d && typeof d === "object") {
+        if (RESTS.includes(+d.rest)) S.rest = +d.rest;
+        if (Array.isArray(d.sessions)) S.sessions = d.sessions.filter((x) => x && SESSIONS[x.type] && Array.isArray(x.sets));
+        if (d.current && SESSIONS[d.current.type] && Array.isArray(d.current.sets)) S.current = d.current;
+      }
+    }
+  } catch (e) {}
+  function save() { try { localStorage.setItem(KEY, JSON.stringify(S)); } catch (e) {} }
+  try { if (navigator.storage && navigator.storage.persist) navigator.storage.persist(); } catch (e) {}
+
+  // ---------- Progression: +2 kg each new build week, held in lighter weeks, legs cut in race week ----------
+  function lastRecord(id, skipRace) {
+    const ss = S.sessions;
+    for (let i = ss.length - 1; i >= 0; i--) {
+      const s = ss[i];
+      if (skipRace && s.week === 10) continue;
+      let hit = null;
+      s.sets.forEach((x) => { if (x.ex === id && typeof x.kg === "number") hit = x; });
+      if (hit) return { kg: hit.kg, week: s.week };
+    }
+    return null;
+  }
+  function suggest(id, w) {
+    const ex = EX[id];
+    if (ex.load === "none") return { none: true, kg: null };
+    const last = lastRecord(id, true) || lastRecord(id, false);
+    if (!last) return { first: true, kg: null };
+    let kg = last.kg, why;
+    if (w === 10) {
+      if (ex.legs) { kg = Math.max(0, Math.floor(last.kg * 0.8 / STEP) * STEP); why = "Race week: lighter legs"; }
+      else why = "Race week: same weight";
+    } else if (last.kg === 0) { kg = 0; why = "Bodyweight last time; add weight with +"; }
+    else if (isLight(w)) why = "Lighter week: same weight";
+    else if (w > last.week) { kg = last.kg + STEP; why = "+2 kg on last week"; }
+    else why = "Same as last time";
+    return { kg, delta: kg - last.kg, why, lastKg: last.kg, lastWeek: last.week };
+  }
+  function defaultType(w) {
+    if (w === 10) return "A";
+    const ss = S.sessions;
+    if (!ss.length) return "A";
+    return ss[ss.length - 1].type === "A" ? "B" : "A";
+  }
+
+  // ---------- Voice and sound ----------
+  const synth = "speechSynthesis" in window ? window.speechSynthesis : null;
+  let voice = null;
+  function pickVoice() {
+    if (!synth) return;
+    try {
+      const vs = synth.getVoices() || [];
+      const gb = vs.filter((v) => /^en[-_]GB/i.test(v.lang)), en = vs.filter((v) => /^en([-_]|$)/i.test(v.lang));
+      voice = gb.find((v) => /Daniel|Arthur|Serena|Kate|Martha|Google UK/i.test(v.name)) || gb.find((v) => v.localService) || gb[0] || en[0] || null;
+    } catch (e) { voice = null; }
+  }
+  if (synth) { pickVoice(); try { synth.addEventListener("voiceschanged", pickVoice); } catch (e) { synth.onvoiceschanged = pickVoice; } }
+  function say(text) {
+    if (!text) return;
+    if (TEST) console.log("[cue] " + (C ? Math.round((Date.now() - C.startedAt) / 1000) : 0) + "s " + text);
+    const live = $("live"); if (live) live.textContent = text;
+    if (!synth) return;
+    try {
+      const u = new SpeechSynthesisUtterance(text);
+      if (voice) { u.voice = voice; u.lang = voice.lang; } else u.lang = "en-GB";
+      u.rate = 1.05;
+      synth.speak(u);
+    } catch (e) {}
+  }
+  function hush() { if (synth) { try { synth.cancel(); } catch (e) {} } }
+  let actx = null;
+  function unlockAudio() {
+    try {
+      if (!actx) { const AC = window.AudioContext || window.webkitAudioContext; if (AC) actx = new AC(); }
+      if (actx && actx.state === "suspended") actx.resume();
+    } catch (e) {}
+  }
+  function beep(freq, dur, vol) {
+    if (!actx) return;
+    try {
+      const t = actx.currentTime, o = actx.createOscillator(), g = actx.createGain();
+      o.type = "sine"; o.frequency.value = freq;
+      g.gain.setValueAtTime(0.0001, t);
+      g.gain.exponentialRampToValueAtTime(vol || 0.25, t + 0.01);
+      g.gain.exponentialRampToValueAtTime(0.0001, t + dur);
+      o.connect(g); g.connect(actx.destination);
+      o.start(t); o.stop(t + dur + 0.03);
+    } catch (e) {}
+  }
+  function weightSpoken(id) {
+    const ex = EX[id], kg = C && C.weights[id];
+    if (ex.load === "none" || kg === 0) return "Bodyweight.";
+    if (kg == null) return "Choose your weight.";
+    return fmtKg(kg) + " kilos" + (ex.load === "pair" ? " each hand." : ".");
+  }
+  function weightText(id) {
+    const ex = EX[id], kg = C && C.weights[id];
+    if (ex.load === "none") return "Bodyweight";
+    if (kg == null) return "Weight to choose";
+    if (kg === 0) return "Bodyweight";
+    return fmtKg(kg) + " kg " + loadLabel(ex);
+  }
+
+  // ---------- Screen wake lock ----------
+  let wake = null, wakeFailed = false;
+  function requestWake() {
+    if (TEST) return;
+    try {
+      if (!("wakeLock" in navigator)) { wakeFailed = true; return; }
+      if (wake) return;
+      navigator.wakeLock.request("screen").then((w) => { wake = w; wakeFailed = false; w.addEventListener("release", () => { wake = null; }); })
+        .catch(() => { wake = null; wakeFailed = true; });
+    } catch (e) { wakeFailed = true; }
+  }
+  function releaseWake() { try { if (wake) wake.release(); } catch (e) {} wake = null; }
+
+  // ---------- Session engine ----------
+  const TEST = /^#test/.test(location.hash);
+  let C = S.current, SETS = C ? buildSets(C.type, C.week) : [];
+  let fired = {}, ticker = null;
+  const ui = { view: C ? "start" : "start", type: null, week: null, preview: null, confirmEnd: false, lastDone: null, copyText: null, note: null };
+
+  function startSession() {
+    unlockAudio();
+    const w = ui.week || currentWeek(), t = ui.type || defaultType(w);
+    const weights = {}, sug = {};
+    SESSIONS[t].pairs.forEach((p) => p.forEach((id) => { const s = suggest(id, w); sug[id] = s; weights[id] = s.kg; }));
+    C = S.current = { id: "s" + Date.now().toString(36), type: t, week: w, startedAt: Date.now(), k: 0, phase: "warmup",
+                      t0: Date.now(), sets: [], weights, sug, paused: false, leadType: null, leadDur: 0 };
+    SETS = buildSets(t, w);
+    save();
+    say(SESSIONS[t].name + ". Warm up first.");
+    enterRun();
+  }
+  function enterRun() {
+    ui.view = "run"; ui.confirmEnd = false;
+    requestWake();
+    clearInterval(ticker);
+    ticker = setInterval(tick, 100);
+    render();
+  }
+  function resumeSession() {
+    unlockAudio();
+    if (!C) return;
+    SETS = buildSets(C.type, C.week);
+    if (C.phase !== "warmup") { C.phase = "hold"; C.paused = false; }
+    save();
+    say("Welcome back.");
+    enterRun();
+  }
+  function leadIntro(k, type) {
+    const st = SETS[k], ex = EX[st.ex];
+    const what = ex.say + (st.set > 1 ? ", set " + st.set : "") + ". " + weightSpoken(st.ex);
+    if (type === "ready") return "Get ready. First up: " + what;
+    if (type === "change") return "Next: " + what;
+    if (type === "rest") return "Rest. Next: " + what;
+    return "";
+  }
+  function beginLead(k, type, prefix) {
+    C.k = k; C.phase = "lead"; C.leadType = type; C.paused = false;
+    C.leadDur = type === "ready" ? READY : type === "change" ? CHANGE : type === "go" ? GO : S.rest;
+    C.t0 = Date.now(); fired = {};
+    save();
+    say(((prefix || "") + " " + leadIntro(k, type)).trim());
+    render();
+  }
+  function needsWeight(k) { const id = SETS[k].ex; return EX[id].load !== "none" && C.weights[id] == null; }
+  function beginSet(k) {
+    C.k = k; C.phase = "set"; C.t0 = Date.now(); C.paused = false; fired = {};
+    save();
+    render();
+    tick();
+  }
+  function switchText(ex) { return SWITCH[ex.per] || "Switch sides."; }
+
+  function tick() {
+    if (!C || ui.view !== "run" || C.paused) { paintClock(); return; }
+    const t = Date.now(), e = (t - C.t0) / 1000;
+    const at = (key, time, fn) => { if (e >= time && !fired[key]) { fired[key] = true; if (e - time < 2.5) fn(); } };
+    if (C.phase === "lead") {
+      const D = C.leadDur, ready = !needsWeight(C.k);
+      if (D >= 20) at("t10", D - 10, () => { if (ready) say("10 seconds."); });
+      [3, 2, 1].forEach((n) => at("c" + n, D - n, () => { if (ready) { say(String(n)); beep(880, 0.12, 0.25); } }));
+      if (e >= D) {
+        if (needsWeight(C.k)) { C.phase = "hold"; save(); say("Enter your weight to start."); render(); }
+        else beginSet(C.k);
+        return;
+      }
+      paintLead(e);
+    } else if (C.phase === "set") {
+      const st = SETS[C.k], ex = EX[st.ex], p = setPlan(st.ex), total = setTotal(p);
+      at("go0", 0, () => { say("Go."); beep(1320, 0.2, 0.25); });
+      for (let s = 0; s < p.sides; s++) {
+        const s0 = s * (p.sideDur + p.gap), last = s === p.sides - 1;
+        if (s > 0) at("go" + s, s0, () => { say("Go."); beep(1320, 0.2, 0.25); });
+        if (p.timed) {
+          if (p.sideDur >= 20) at("t10_" + s, s0 + p.sideDur - 10, () => say("10 seconds."));
+          [3, 2, 1].forEach((n) => at("c" + s + n, s0 + p.sideDur - n, () => { say(String(n)); beep(880, 0.1, 0.2); }));
+          if (!last) at("sw" + s, s0 + p.sideDur, () => say(switchText(ex)));
+        } else {
+          for (let r = 1; r <= p.max; r++) {
+            at("tk" + s + "_" + r, s0 + (r - 1) * p.tempo + p.turn, () => beep(620, 0.05, 0.12));
+            if (last && r === p.max) continue; // spoken with the set's end
+            at("r" + s + "_" + r, s0 + r * p.tempo, () => {
+              let txt = r + ".";
+              if (r === p.target && p.max > p.target) txt += " " + (p.max - p.target) + " more if you've got them.";
+              if (r === p.max && !last) txt += " " + switchText(ex);
+              say(txt);
+            });
+          }
+        }
+      }
+      if (e >= total) {
+        const late = e - total > 2.5;
+        finishSet(p.timed ? null : p.max, late ? "" : (p.timed ? "Done." : p.max + "."), late);
+        return;
+      }
+      paintSet(e, p);
+    }
+    paintClock();
+  }
+
+  function finishSet(reps, prefix, late) {
+    const st = SETS[C.k], ex = EX[st.ex];
+    C.sets.push({ ex: st.ex, set: st.set, kg: ex.load === "none" ? null : C.weights[st.ex], reps: reps });
+    if (C.k >= SETS.length - 1) { finishSession(true, prefix); return; }
+    if (late) hush();
+    beginLead(C.k + 1, st.pos === 0 ? "change" : "rest", late ? "" : prefix);
+  }
+  function stopSet() {
+    if (!C || C.phase !== "set") return;
+    hush();
+    const st = SETS[C.k], p = setPlan(st.ex), pos = setPos(p, (Date.now() - C.t0) / 1000);
+    let reps = null;
+    if (!p.timed) reps = pos.gap ? p.max : Math.min(p.max, Math.floor(pos.local / p.tempo));
+    finishSet(reps, "", false);
+  }
+  function togglePause() {
+    if (!C) return;
+    unlockAudio();
+    if (C.paused) {
+      C.t0 += Date.now() - C.pausedAt; C.paused = false; save();
+      say("Resume.");
+    } else {
+      C.paused = true; C.pausedAt = Date.now(); save();
+      hush(); say("Paused.");
+    }
+    render();
+  }
+  function skipLead() {
+    if (!C || C.phase !== "lead") return;
+    hush();
+    if (needsWeight(C.k)) { C.phase = "hold"; save(); render(); return; }
+    beginSet(C.k);
+  }
+  function addRest() { if (C && C.phase === "lead") { C.leadDur += 15; fired = {}; save(); } }
+  function finishSession(complete, prefix) {
+    const rec = { id: C.id, type: C.type, week: C.week, date: new Date(C.startedAt).toISOString(),
+                  durationSec: Math.round((Date.now() - C.startedAt) / 1000), sets: C.sets, complete: !!complete };
+    if (rec.sets.length) { S.sessions.push(rec); if (S.sessions.length > 300) S.sessions = S.sessions.slice(-300); }
+    S.current = null; C = null; save();
+    clearInterval(ticker); ticker = null; releaseWake();
+    ui.lastDone = rec.sets.length ? rec : null; ui.view = rec.sets.length ? "done" : "start"; ui.confirmEnd = false; ui.copyText = null;
+    if (complete) { say(((prefix || "") + " Session complete. Nice work.").trim()); beep(660, 0.15, 0.25); setTimeout(() => beep(990, 0.4, 0.3), 180); }
+    render();
+  }
+  function discardSession() {
+    hush();
+    S.current = null; C = null; save();
+    clearInterval(ticker); ticker = null; releaseWake();
+    ui.view = "start"; ui.confirmEnd = false;
+    render();
+  }
+
+  // ---------- Rendering ----------
+  const app = $("app");
+  function render() {
+    if (location.hash === "#figures") return renderGallery();
+    if (ui.view === "run" && C) {
+      if (C.phase === "warmup") renderWarmup();
+      else if (C.phase === "set") renderSet();
+      else renderLead();
+    } else if (ui.view === "done" && ui.lastDone) renderDone();
+    else { ui.view = "start"; renderStart(); }
+  }
+  function kgCell(ex, s) {
+    if (s.none) return '<span class="soft">Bodyweight</span>';
+    if (s.first) return '<span class="soft">Set in session</span>';
+    const chip = s.delta > 0 ? "+" + fmtKg(s.delta) : s.delta < 0 ? "−" + fmtKg(-s.delta) : "same";
+    return fmtKg(s.kg) + ' kg<span class="chip">' + chip + "</span>";
+  }
+  function renderStart() {
+    document.body.setAttribute("data-phase", "idle");
+    document.body.classList.remove("is-paused");
+    const auto = currentWeek(), w = ui.week || auto, t = ui.type || defaultType(w), Sx = SESSIONS[t];
+    const before = new Date() < PLAN_START;
+    let h = '<section class="view start" aria-labelledby="startTitle">';
+    h += '<header><p class="label">Sub-41 plan · ' + (before && !ui.week ? "Week 1 starts Mon 16 Nov" : shortWeek(w)) + '</p><h1 class="title" id="startTitle">' + esc(Sx.name) +
+      '</h1><p class="lede">' + esc(Sx.day) + ", about 25 minutes. The voice counts every rep, tells you what's next and which weight to use.</p></header>";
+    if (C) {
+      h += '<div class="notice"><p class="notice-title">Unfinished: ' + esc(SESSIONS[C.type].name) + " · " + esc(shortWeek(C.week)) + '</p><p class="soft">' +
+        C.sets.length + " of " + buildSets(C.type, C.week).length + " sets done, started " + esc(fmtDate(C.startedAt)) + '.</p><div class="notice-actions">' +
+        '<button type="button" class="btn primary" data-act="resume">Resume</button>' +
+        (C.sets.length ? '<button type="button" class="btn" data-act="close-saved">Save and close</button>' : '<button type="button" class="btn" data-act="discard">Discard</button>') +
+        "</div></div>";
+    }
+    let opts = "";
+    for (let i = 1; i <= 10; i++) {
+      opts += '<option value="' + i + '"' + (i === w ? " selected" : "") + ">Week " + i + (isLight(i) ? " · lighter" : i === 10 ? " · race" : "") +
+        (i === auto && !before ? " (now)" : "") + "</option>";
+    }
+    if (auto > 10) opts += '<option value="' + auto + '"' + (w === auto ? " selected" : "") + ">After the race (now)</option>";
+    h += '<div class="fields"><div class="field"><span class="label" id="sessLbl">Session</span><div class="seg" role="group" aria-labelledby="sessLbl">' +
+      '<button type="button" data-act="type" data-type="A" aria-pressed="' + (t === "A") + '">A · Mon</button>' +
+      '<button type="button" data-act="type" data-type="B" aria-pressed="' + (t === "B") + '">B · Thu</button></div></div>' +
+      '<div class="field"><label class="label" for="weekSel">Plan week</label><div class="select-wrap"><select id="weekSel">' + opts + "</select></div></div></div>";
+    h += '<p class="week-note">' + esc(weekNote(w, t)) + "</p>";
+    h += '<div class="plan">';
+    Sx.pairs.forEach((pair, pi) => {
+      const n = setsFor(pi, w);
+      h += '<div class="pair"><div class="pair-head"><span class="label">Pair ' + PAIRS[pi] + '</span><span class="label">' + n + " rounds</span></div>";
+      pair.forEach((id, ei) => {
+        const ex = EX[id], open = ui.preview === id;
+        h += '<button type="button" class="row" data-act="preview" data-id="' + id + '" aria-expanded="' + open + '"><span class="tag">' + PAIRS[pi] + (ei + 1) +
+          '</span><span class="nm">' + esc(ex.name) + '<span class="dose">' + n + " × " + esc(doseText(ex)) + '</span></span><span class="kg">' + kgCell(ex, suggest(id, w)) + "</span></button>";
+        if (open) h += '<div class="fig fig-start" data-fig="' + ex.anim + '" data-mode="demo"></div><p class="soft">' + esc(ex.cue) + "</p>";
+      });
+      h += "</div>";
+    });
+    h += '</div><p class="tap-hint">Tap an exercise to see how it moves.</p>';
+    h += '<div class="field"><span class="label" id="restLbl">Rest between rounds</span><div class="seg" role="group" aria-labelledby="restLbl">' +
+      RESTS.map((r) => '<button type="button" data-act="rest-opt" data-rest="' + r + '" aria-pressed="' + (S.rest === r) + '">' + r + " s</button>").join("") + "</div></div>";
+    h += '<div class="panel"><div class="panel-row"><div><p class="status">Voice coach</p><p class="status-note">Counts at 2 seconds down, 1 up. Test the volume with your headphones.</p></div>' +
+      '<button type="button" class="btn small" data-act="test-voice">Test voice</button></div></div>';
+    h += historyHtml();
+    h += '<p class="fine">Keep this page open with the screen on. If the phone locks, the count stops. Weights are saved on this phone.</p>';
+    h += '<div class="sticky-bar">' + (C ? '<button type="button" class="btn primary wide" data-act="resume">Resume ' + esc(SESSIONS[C.type].name) + "</button>"
+      : '<button type="button" class="btn primary wide" data-act="start">Start ' + esc(Sx.name) + "</button>") + "</div></section>";
+    app.innerHTML = h;
+  }
+  function perExercise(rec) {
+    const out = [];
+    SESSIONS[rec.type].pairs.forEach((p) => p.forEach((id) => {
+      const rs = rec.sets.filter((r) => r.ex === id);
+      if (!rs.length) return;
+      const ex = EX[id];
+      let val;
+      if (ex.load === "none") val = rs.length + (rs.length === 1 ? " set" : " sets");
+      else val = rs.map((r) => fmtKg(r.kg)).join(" · ") + " kg";
+      const reps = rs.map((r) => r.reps).filter((r) => r != null);
+      out.push({ name: ex.name, val, reps: reps.length && !ex.hold ? reps.join(" · ") + " reps" : "" });
+    }));
+    return out;
+  }
+  function historyHtml() {
+    const ss = S.sessions.slice().reverse().slice(0, 12);
+    let h = '<section class="history" aria-labelledby="histTitle"><h2 id="histTitle">Logged sessions</h2>';
+    if (!ss.length) return h + '<p class="soft">Nothing logged yet. Your first session sets your starting weights.</p></section>';
+    ss.forEach((s) => {
+      h += "<details><summary><span>" + esc(fmtDate(s.date)) + " · " + esc(SESSIONS[s.type].name) + '</span><span class="soft">' + esc(shortWeek(s.week)) +
+        (s.complete ? "" : " · ended early") + "</span></summary><ul>";
+      perExercise(s).forEach((r) => { h += "<li><span>" + esc(r.name) + "</span><span>" + esc(r.val) + "</span></li>"; });
+      h += "</ul></details>";
+    });
+    return h + "</section>";
+  }
+
+  function topBar() {
+    const done = C.sets.length, total = SETS.length;
+    return '<header class="run-top"><button type="button" class="link-btn" data-act="end">End</button><div class="meta"><div>' + esc(SESSIONS[C.type].name) + " · " +
+      esc(shortWeek(C.week)) + "</div><div>" + done + " of " + total + ' sets · <span id="elapsed">' + fmtClock(Date.now() - C.startedAt) + "</span></div></div></header>" +
+      '<div class="prog" aria-hidden="true"><div style="transform:scaleX(' + (done / total).toFixed(3) + ')"></div></div>' +
+      '<p class="banner" id="banner"' + (wakeFailed ? "" : " hidden") + ">Your screen may lock on its own. Set Auto-Lock to Never in Settings > Display & Brightness.</p>";
+  }
+  function confirmHtml() {
+    return '<div class="confirm"><p class="q">End this session?</p>' +
+      (C.sets.length ? '<p class="soft">The ' + C.sets.length + " sets you've done are saved and count towards next week.</p>" +
+        '<button type="button" class="btn primary" data-act="end-save">Save and finish</button>' : '<p class="soft">Nothing is logged yet.</p>') +
+      '<button type="button" class="btn" data-act="end-discard">Discard session</button><button type="button" class="link-btn" data-act="end-cancel">Keep going</button></div>';
+  }
+  function stepperHtml(id, big) {
+    const ex = EX[id], v = C.weights[id];
+    if (ex.load === "none") return '<div class="weight"><span class="label">Weight</span><strong class="count-big" style="font-size:2.4rem">Bodyweight</strong></div>';
+    const sg = (C.sug && C.sug[id]) || {};
+    let note;
+    if (sg.first || sg.lastKg == null) note = "First time: choose a weight you could lift 2–3 more reps with." + (ex.allowZero ? " Enter 0 for bodyweight." : "");
+    else note = sg.why + ". Last time " + fmtKg(sg.lastKg) + " kg in " + shortWeek(sg.lastWeek).toLowerCase() + ".";
+    return '<div class="weight"><label class="label" for="kgInput">Weight, kg ' + esc(loadLabel(ex)) + '</label><div class="stepper">' +
+      '<button type="button" class="step-btn" data-act="minus" aria-label="2 kilograms lighter">−</button>' +
+      '<div class="kg-wrap"><input id="kgInput" class="kg-input" type="text" inputmode="decimal" autocomplete="off" enterkeyhint="done" placeholder="–" value="' +
+      (v == null ? "" : fmtKg(v)) + '"><span class="kg-unit">kg</span></div>' +
+      '<button type="button" class="step-btn" data-act="plus" aria-label="2 kilograms heavier">+</button></div>' +
+      '<p class="weight-note">' + esc(note) + '</p><p class="err" id="kgErr" role="alert"></p></div>';
+  }
+
+  function renderWarmup() {
+    document.body.setAttribute("data-phase", "idle");
+    document.body.classList.remove("is-paused");
+    const first = SETS[0];
+    let h = '<section class="view run">' + topBar() + '<div class="stage"><div class="stage-inner">';
+    h += '<p class="lead-word">Warm-up · about 3 minutes</p><h1 class="ex-name">Hips and core first</h1><ol class="warm-list">' +
+      WARMUP.map((x) => "<li>" + esc(x) + "</li>").join("") + "</ol>";
+    h += '<p class="soft">First up: ' + first.tag + " " + esc(EX[first.ex].name) + " · " + esc(weightText(first.ex)) + "</p></div></div>";
+    h += ui.confirmEnd ? confirmHtml() : '<div class="controls"><button type="button" class="btn primary wide" data-act="warm-done">Start the session</button></div>';
+    h += "</section>";
+    app.innerHTML = h;
+  }
+
+  function renderLead() {
+    const st = SETS[C.k], ex = EX[st.ex], hold = C.phase === "hold", rest = C.leadType === "rest" && !hold;
+    document.body.setAttribute("data-phase", rest ? "rest" : "idle");
+    document.body.classList.toggle("is-paused", C.paused);
+    const word = hold ? "Ready when you are" : C.leadType === "rest" ? "Rest" : C.leadType === "ready" ? "Get ready" : C.leadType === "go" ? "Starting" : "Next exercise";
+    let h = '<section class="view run">' + topBar() + '<div class="stage"><div class="stage-inner">';
+    h += '<p class="lead-word">' + esc(C.paused ? "Paused" : word) + "</p>";
+    if (!hold) h += '<div class="count-big" id="leadCount">' + Math.ceil(C.leadDur) + '</div><div class="bar" aria-hidden="true"><div id="leadBar"></div></div>';
+    h += '<div class="next-card"><div class="tagline"><span class="tag-pill">' + st.tag + "</span><span>Set " + st.set + " of " + st.of + " · " + esc(doseText(ex)) + "</span></div>" +
+      '<h2 class="ex-name">' + esc(ex.name) + '</h2><p class="cue">' + esc(ex.cue) + "</p>" +
+      '<div class="fig fig-next" data-fig="' + ex.anim + '" data-mode="demo"></div>' + stepperHtml(st.ex) +
+      (ex.swap ? '<p class="swap">' + esc(ex.swap) + "</p>" : "") + "</div>";
+    h += "</div></div>";
+    if (ui.confirmEnd) h += confirmHtml();
+    else if (hold) h += '<div class="controls"><button type="button" class="btn primary wide" data-act="go">Start set</button></div>';
+    else if (rest) h += '<div class="controls two"><button type="button" class="btn" data-act="add-rest">+15 s</button><button type="button" class="btn primary" data-act="skip-lead">Start now</button></div>';
+    else h += '<div class="controls two"><button type="button" class="btn" data-act="pause">' + (C.paused ? "Resume" : "Pause") + '</button><button type="button" class="btn primary" data-act="skip-lead">Start now</button></div>';
+    h += "</section>";
+    app.innerHTML = h;
+    paintLead((Date.now() - C.t0) / 1000);
+  }
+  function paintLead(e) {
+    if (!C || C.phase !== "lead") return;
+    if (C.paused) e = (C.pausedAt - C.t0) / 1000;
+    const left = Math.max(0, C.leadDur - e), el = $("leadCount"), bar = $("leadBar");
+    if (el) { const s = String(Math.ceil(left)); if (el.textContent !== s) el.textContent = s; }
+    if (bar) bar.style.transform = "scaleX(" + Math.min(1, left / C.leadDur).toFixed(4) + ")";
+    paintClock();
+  }
+
+  function renderSet() {
+    const st = SETS[C.k], ex = EX[st.ex], p = setPlan(st.ex);
+    document.body.setAttribute("data-phase", "set");
+    document.body.classList.toggle("is-paused", C.paused);
+    let h = '<section class="view run">' + topBar() + '<div class="stage"><div class="stage-inner">';
+    h += '<div class="tagline"><span class="tag-pill">' + st.tag + "</span><span>Set " + st.set + " of " + st.of + " · " + esc(doseText(ex)) + "</span></div>";
+    h += '<h1 class="ex-name">' + esc(ex.name) + "</h1>";
+    h += '<div class="fig fig-set" data-fig="' + ex.anim + '" data-mode="set"></div>';
+    h += '<div class="counter"><span class="num" id="repNum">0</span><span class="of" id="repOf">' + (p.timed ? "s" : "/ " + p.target) + '</span><span class="side" id="sideLbl"></span></div>';
+    h += '<div class="bar" aria-hidden="true"><div id="setBar"></div></div><p class="extra" id="extra"></p>';
+    if (ex.load !== "none") {
+      h += '<div class="set-weight"><span><strong id="setKg">' + esc(weightText(st.ex)) + "</strong></span>" +
+        '<span class="mini"><button type="button" class="step-btn" data-act="minus" aria-label="2 kilograms lighter">−</button><button type="button" class="step-btn" data-act="plus" aria-label="2 kilograms heavier">+</button></span></div>';
+    }
+    h += "</div></div>";
+    if (ui.confirmEnd) h += confirmHtml();
+    else h += '<div class="controls two"><button type="button" class="btn" data-act="pause">' + (C.paused ? "Resume" : "Pause") + '</button><button type="button" class="btn primary" data-act="stop-set">' + (p.timed ? "End hold" : "Stop set") + "</button></div>";
+    h += "</section>";
+    app.innerHTML = h;
+    paintSet((Date.now() - C.t0) / 1000, p);
+  }
+  function paintSet(e, p) {
+    if (!C || C.phase !== "set") return;
+    if (C.paused) e = (C.pausedAt - C.t0) / 1000;
+    const st = SETS[C.k], ex = EX[st.ex], pos = setPos(p, Math.max(0, e));
+    const num = $("repNum"), side = $("sideLbl"), bar = $("setBar"), extra = $("extra");
+    let n, sideTxt = "", extraTxt = "", frac;
+    if (p.sides > 1) sideTxt = (ex.per === "leg" ? (pos.side ? "Second leg" : "First leg") : ex.per === "arm" ? (pos.side ? "Second arm" : "First arm") : ex.per === "hand" ? (pos.side ? "Other hand" : "First hand") : (pos.side ? "Second side" : "First side"));
+    if (pos.gap) { sideTxt = switchText(ex).replace(".", ""); }
+    if (p.timed) {
+      n = pos.gap ? Math.ceil(p.gap - pos.local) : Math.ceil(p.sideDur - pos.local);
+      frac = pos.gap ? 0 : pos.local / p.sideDur;
+    } else {
+      n = pos.gap ? p.max : Math.min(p.max, Math.floor(pos.local / p.tempo));
+      frac = pos.gap ? 1 : pos.local / p.sideDur;
+      if (!pos.gap && n >= p.target && p.max > p.target) extraTxt = "Extra reps if you've got them. Tap Stop set when you're done.";
+      const of = $("repOf"); if (of) of.textContent = "/ " + (n >= p.target && p.max > p.target ? p.max : p.target);
+    }
+    if (num && num.textContent !== String(n)) num.textContent = String(n);
+    if (side && side.textContent !== sideTxt) side.textContent = sideTxt;
+    if (extra && extra.textContent !== extraTxt) extra.textContent = extraTxt;
+    if (bar) bar.style.transform = "scaleX(" + Math.min(1, Math.max(0, frac)).toFixed(4) + ")";
+    paintClock();
+  }
+  function paintClock() {
+    const el = $("elapsed"); if (el && C) el.textContent = fmtClock(Date.now() - C.startedAt);
+    const bn = $("banner"); if (bn) bn.hidden = !wakeFailed;
+  }
+
+  function renderDone() {
+    const r = ui.lastDone;
+    document.body.setAttribute("data-phase", "done");
+    document.body.classList.remove("is-paused");
+    let h = '<section class="view done" aria-labelledby="doneTitle"><h1 class="done-title" id="doneTitle">' + (r.complete ? "Logged." : "Saved.") + "</h1>" +
+      '<p class="done-meta">' + esc(SESSIONS[r.type].name) + " · " + esc(shortWeek(r.week)) + " · " + Math.max(1, Math.round(r.durationSec / 60)) + ' min</p><ul class="summary">';
+    perExercise(r).forEach((x) => { h += "<li><span>" + esc(x.name) + "</span><span>" + esc(x.val) + (x.reps ? "<br><span class=\"soft\">" + esc(x.reps) + "</span>" : "") + "</span></li>"; });
+    h += '</ul><p class="done-next">' + esc(nextHint(r)) + "</p>";
+    h += '<button type="button" class="btn" data-act="copy">Copy summary</button>';
+    if (ui.copyText) h += '<textarea class="copy-box" id="copyBox" readonly>' + esc(ui.copyText) + "</textarea>";
+    h += '<div class="sticky-bar"><button type="button" class="btn primary wide" data-act="home">Back to start</button></div></section>';
+    app.innerHTML = h;
+  }
+  function nextHint(r) {
+    if (r.week === 10) return "Race week strength is done. Keep your legs fresh and run well.";
+    if (r.type === "A") return "Next: Strength B on Thursday.";
+    const nw = r.week + 1;
+    if (isLight(nw)) return "Next: Strength A on Monday. Next week is lighter: same weights, fewer sets.";
+    if (nw === 10) return "Next: Strength A on Monday. It's race week, so legs go lighter.";
+    return "Next: Strength A on Monday. Every lift goes up 2 kg next week.";
+  }
+  function summaryText(r) {
+    const lines = [SESSIONS[r.type].name + ", " + shortWeek(r.week).toLowerCase() + ", " + fmtDate(r.date)];
+    perExercise(r).forEach((x) => lines.push(x.name + ": " + x.val + (x.reps ? " (" + x.reps + ")" : "")));
+    return lines.join("\n");
+  }
+  function renderGallery() {
+    document.body.setAttribute("data-phase", "idle");
+    const k = location.search.includes("k=1") ? 1 : 0;
+    app.innerHTML = '<div class="gallery">' + Object.keys(ANIM).map((a) => '<div>' + a + '<div class="fig">' + figureSVG(a, k, false) + "</div></div>").join("") + "</div>";
+  }
+
+  // ---------- Figure animation ----------
+  function animate() {
+    const figs = document.querySelectorAll("[data-fig]");
+    const now = performance.now() / 1000;
+    figs.forEach((el) => {
+      const key = el.getAttribute("data-fig"), mode = el.getAttribute("data-mode");
+      let k, mirror = false;
+      if (mode === "set" && C && C.phase === "set") {
+        const st = SETS[C.k], p = setPlan(st.ex);
+        const e = Math.max(0, ((C.paused ? C.pausedAt : Date.now()) - C.t0) / 1000), pos = setPos(p, e);
+        mirror = pos.side === 1 || (pos.gap && pos.side === 0);
+        k = pos.gap || pos.done ? 0 : blendAt(key, pos.local);
+      } else {
+        k = reduceMotion ? 1 : blendAt(key, now);
+      }
+      const sig = key + (mirror ? "m" : "") + Math.round(k * 200);
+      if (el._sig !== sig) { el._sig = sig; el.innerHTML = figureSVG(key, k, mirror); }
+    });
+    requestAnimationFrame(animate);
+  }
+  let reduceMotion = false;
+  try { reduceMotion = window.matchMedia("(prefers-reduced-motion: reduce)").matches; } catch (e) {}
+
+  // ---------- Events ----------
+  function currentWeightId() { return C && SETS[C.k] ? SETS[C.k].ex : null; }
+  function nudge(d) {
+    const id = currentWeightId(); if (!id) return;
+    let v = C.weights[id]; if (v == null) v = 0;
+    v = Math.max(0, Math.round((v + d) * 2) / 2);
+    C.weights[id] = v; save();
+    const inp = $("kgInput"); if (inp) inp.value = fmtKg(v);
+    const sk = $("setKg"); if (sk) sk.textContent = weightText(id);
+    const er = $("kgErr"); if (er) er.textContent = "";
+  }
+  app.addEventListener("click", (e) => {
+    const b = e.target.closest("[data-act]"); if (!b) return;
+    unlockAudio();
+    switch (b.getAttribute("data-act")) {
+      case "type": ui.type = b.getAttribute("data-type"); ui.preview = null; render(); break;
+      case "rest-opt": S.rest = +b.getAttribute("data-rest"); save(); render(); break;
+      case "preview": { const id = b.getAttribute("data-id"); ui.preview = ui.preview === id ? null : id; render(); break; }
+      case "test-voice": say("One. Two. Three. Rest. Next: bench press. 18 kilos each hand."); beep(620, 0.05, 0.15); break;
+      case "start": startSession(); break;
+      case "resume": resumeSession(); break;
+      case "close-saved": finishSession(false, ""); break;
+      case "discard": discardSession(); break;
+      case "warm-done": beginLead(0, "ready", ""); break;
+      case "go": {
+        if (needsWeight(C.k)) {
+          const er = $("kgErr"); if (er) er.textContent = "Enter the weight you'll use, in kg." + (EX[SETS[C.k].ex].allowZero ? " Enter 0 for bodyweight." : "");
+          const inp = $("kgInput"); if (inp) inp.focus();
+          break;
+        }
+        beginLead(C.k, "go", "");
+        break;
+      }
+      case "skip-lead": skipLead(); break;
+      case "add-rest": addRest(); paintLead((Date.now() - C.t0) / 1000); break;
+      case "pause": togglePause(); break;
+      case "stop-set": stopSet(); break;
+      case "minus": nudge(-STEP); break;
+      case "plus": nudge(STEP); break;
+      case "end": ui.confirmEnd = true; render(); break;
+      case "end-cancel": ui.confirmEnd = false; render(); break;
+      case "end-save": hush(); finishSession(false, ""); break;
+      case "end-discard": discardSession(); break;
+      case "copy": {
+        const text = summaryText(ui.lastDone);
+        const fallback = () => { ui.copyText = text; render(); const box = $("copyBox"); if (box) { box.focus(); box.select(); } };
+        try { navigator.clipboard.writeText(text).then(() => { b.textContent = "Copied"; }, fallback); } catch (err) { fallback(); }
+        break;
+      }
+      case "home": ui.view = "start"; ui.lastDone = null; ui.week = null; ui.type = null; render(); app.scrollTop = 0; break;
+    }
+  });
+  app.addEventListener("change", (e) => {
+    if (e.target.id === "weekSel") { const v = +e.target.value; ui.week = v === currentWeek() ? null : v; ui.preview = null; render(); }
+  });
+  app.addEventListener("input", (e) => {
+    if (e.target.id === "kgInput" && C) {
+      const id = currentWeightId(); if (!id) return;
+      C.weights[id] = parseKg(e.target.value); save();
+      const er = $("kgErr"); if (er) er.textContent = "";
+    }
+  });
+  app.addEventListener("keydown", (e) => { if (e.target.id === "kgInput" && e.key === "Enter") { e.preventDefault(); e.target.blur(); } });
+  document.addEventListener("pointerdown", unlockAudio, { passive: true });
+  document.addEventListener("visibilitychange", () => {
+    if (document.visibilityState === "visible" && C && ui.view === "run") { requestWake(); tick(); }
+  });
+  window.addEventListener("hashchange", render);
+
+  render();
+  requestAnimationFrame(animate);
+})();
+</script>
+</body>
+</html>
