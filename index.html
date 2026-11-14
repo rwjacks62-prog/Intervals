@@ -6,14 +6,14 @@
 <meta name="apple-mobile-web-app-capable" content="yes">
 <meta name="mobile-web-app-capable" content="yes">
 <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
-<meta name="apple-mobile-web-app-title" content="Intervals">
+<meta name="apple-mobile-web-app-title" content="Sub-41">
 <meta name="theme-color" content="#F2F4F1">
-<title>Sub-41 Intervals</title>
+<title>Sub-41 Training</title>
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Archivo:wght@400;500;600;700&family=Big+Shoulders+Display:wght@700;800;900&display=swap">
 <style>
-/* Layout: one-screen running tool. Plan on the start screen; on the run, one phase fills the screen in a colour you can read at a glance: blue = interval, sage = rest, neutral = warm-up and warm-down. */
+/* Layout: one-screen training app. Home shows today and the week; each workout fills the screen in a colour you can read at a glance: blue = hard effort, sage = rest, neutral = easy running and getting ready. */
 :root {
   --ink: #1A1D2E;
   --ink-soft: #4F566B;
@@ -30,6 +30,7 @@
   --rest-card: #EDF3EF;
   --on-rest: #1A1D2E;
   --on-rest-soft: #46524D;
+  --chip: #DDE3FC;
   --fast: #FFC94A;
   --slow: #FF9B8A;
   --ok: #FFFFFF;
@@ -53,6 +54,7 @@
     --rest-card: #1F3129;
     --on-rest: #E3EDE8;
     --on-rest-soft: #9FB3AA;
+    --chip: #283163;
     --warn: #F2A46B;
     --good: #6FD39C;
     color-scheme: dark;
@@ -99,7 +101,7 @@ h1, h2, h3 { margin: 0; }
 .soft { color: var(--fg-soft); }
 
 /* Controls */
-button, select { font: inherit; color: inherit; }
+button, select, input { font: inherit; color: inherit; }
 .btn {
   appearance: none;
   font-weight: 700;
@@ -115,7 +117,7 @@ button, select { font: inherit; color: inherit; }
 }
 .btn.primary { background: var(--accent); border-color: var(--accent); color: var(--on-accent); }
 body[data-phase="work"] .btn.primary { background: var(--fg); border-color: var(--fg); color: var(--bg); }
-.btn.big { width: 100%; min-height: 4rem; font-size: 1.25rem; }
+.btn.wide { width: 100%; min-height: 4rem; font-size: 1.25rem; }
 .btn.small { min-height: 2.75rem; font-size: 0.95rem; padding: 0 0.9rem; white-space: nowrap; }
 .btn:disabled { opacity: 0.4; }
 .btn:active { transform: translateY(1px); }
@@ -131,8 +133,8 @@ body[data-phase="work"] .btn.primary { background: var(--fg); border-color: var(
   cursor: pointer;
   touch-action: manipulation;
 }
-.btn:focus-visible, .link-btn:focus-visible, .seg button:focus-visible, select:focus-visible, .unlock:focus-visible { outline: 3px solid var(--accent); outline-offset: 2px; }
-body[data-phase="work"] .btn:focus-visible { outline-color: var(--fg); }
+.btn:focus-visible, .link-btn:focus-visible, .seg button:focus-visible, select:focus-visible, .row:focus-visible, .step-btn:focus-visible, input:focus-visible, .unlock:focus-visible, .choice:focus-visible { outline: 3px solid var(--accent); outline-offset: 2px; }
+body[data-phase="work"] .btn:focus-visible, body[data-phase="work"] .step-btn:focus-visible { outline-color: var(--fg); }
 
 .label { font-size: 0.78rem; font-weight: 600; letter-spacing: 0.06em; text-transform: uppercase; color: var(--fg-soft); }
 .seg { display: flex; border: 2px solid var(--fg); border-radius: 0.75rem; overflow: hidden; }
@@ -142,6 +144,7 @@ body[data-phase="work"] .btn:focus-visible { outline-color: var(--fg); }
   border: 0;
   background: transparent;
   min-height: 2.75rem;
+  padding: 0 0.3rem;
   font-weight: 700;
   cursor: pointer;
   touch-action: manipulation;
@@ -167,196 +170,245 @@ select {
   -webkit-appearance: none;
   width: 100%;
   font-weight: 700;
-  font-size: 1rem;
-  min-height: 3rem;
-  padding: 0 2.25rem 0 0.85rem;
+  min-height: calc(2.75rem + 4px);
+  padding: 0 2.25rem 0 0.75rem;
   border: 2px solid var(--fg);
   border-radius: 0.75rem;
   background: transparent;
 }
+.field { display: flex; flex-direction: column; gap: 0.35rem; min-width: 0; }
+.fields { display: grid; grid-template-columns: 1fr 1fr; gap: 0.75rem; }
 
-/* Start */
-.start { overflow-y: auto; -webkit-overflow-scrolling: touch; gap: 1.4rem; padding-top: 1.25rem; }
-.eyebrow { margin-bottom: 0.35rem; }
+/* Screens with a list (home, setup, history) */
+.scroll { overflow-y: auto; -webkit-overflow-scrolling: touch; gap: 1.4rem; padding-top: 1rem; }
+.scroll > *, .done > *, .stage-inner > * { flex-shrink: 0; }
+.back { align-self: flex-start; margin: -0.25rem 0 -0.75rem; }
 .title {
+  margin-top: 0.35rem;
   font-family: var(--font-display);
   font-weight: 900;
-  font-size: 4.5rem;
-  font-size: clamp(4rem, 21vw, 6.5rem);
-  line-height: 0.82;
+  font-size: 3.5rem;
+  font-size: clamp(3rem, 15vw, 5.5rem);
+  line-height: 0.85;
   letter-spacing: -0.01em;
 }
-.field { display: flex; flex-direction: column; gap: 0.4rem; }
-.session { display: flex; flex-direction: column; gap: 0.8rem; }
-.session-name {
-  font-family: var(--font-display);
-  font-weight: 800;
-  font-size: 2.75rem;
-  line-height: 0.9;
-}
-.session-sub { color: var(--fg-soft); }
-.steps { list-style: none; margin: 0; padding: 0; border-top: 3px solid var(--fg); }
-.steps li {
-  display: grid;
-  grid-template-columns: minmax(0, 1fr) auto;
-  gap: 0.75rem;
-  align-items: baseline;
-  padding: 0.6rem 0;
-  border-bottom: 1px solid var(--line);
-}
-.steps .what { font-weight: 600; min-width: 0; }
-.steps .what span { display: block; font-weight: 400; font-size: 0.92rem; color: var(--fg-soft); }
-.steps .how { font-weight: 700; white-space: nowrap; font-variant-numeric: tabular-nums; }
-.total { font-weight: 600; color: var(--fg-soft); }
-.panel { background: var(--panel); border-radius: 1rem; padding: 1rem; display: flex; flex-direction: column; gap: 0.7rem; }
+.lede { margin-top: 0.6rem; color: var(--fg-soft); max-width: 38ch; }
+.panel, .notice { background: var(--panel); border-radius: 1rem; padding: 1rem; display: flex; flex-direction: column; gap: 0.7rem; }
 .panel-row { display: flex; align-items: center; justify-content: space-between; gap: 0.75rem; }
 .panel-row > div { min-width: 0; }
-.status { font-weight: 700; }
+.status, .notice-title { font-weight: 700; }
 .status-note { font-size: 0.9rem; color: var(--fg-soft); }
+.notice-actions { display: grid; grid-template-columns: 1fr 1fr; gap: 0.6rem; }
 .dot { display: inline-block; width: 0.6rem; height: 0.6rem; border-radius: 50%; margin-right: 0.4rem; background: var(--fg-soft); vertical-align: 0.05em; }
 .dot.good { background: var(--good); }
 .dot.warn { background: var(--warn); }
-.history h2 { font-family: var(--font-display); font-weight: 800; font-size: 1.9rem; line-height: 1; margin-bottom: 0.4rem; }
+.fine { font-size: 0.85rem; color: var(--fg-soft); }
+.sticky-bar { position: sticky; bottom: 0; margin-top: auto; padding: 0.75rem 0 1rem; background: var(--bg); }
+.chip { display: inline-block; margin-left: 0.3rem; padding: 0.05rem 0.45rem; border-radius: 999px; font-size: 0.75rem; font-weight: 700; background: var(--chip); color: var(--fg); vertical-align: 0.1em; }
+
+/* Home */
+.today { display: flex; flex-direction: column; gap: 0.6rem; }
+.today-item { display: flex; align-items: center; justify-content: space-between; gap: 0.75rem; background: var(--panel); border-radius: 1rem; padding: 0.85rem 0.9rem 0.85rem 1rem; }
+.today-item > div { min-width: 0; }
+.today-item .what { font-weight: 700; font-size: 1.1rem; line-height: 1.25; }
+.today-item .sub { font-size: 0.9rem; color: var(--fg-soft); }
+.done-tag { font-weight: 700; color: var(--good); white-space: nowrap; }
+.choices { display: grid; grid-template-columns: 1fr 1fr; gap: 0.75rem; }
+.choice {
+  appearance: none;
+  border: 2px solid var(--fg);
+  border-radius: 1rem;
+  background: transparent;
+  padding: 0.9rem 1rem 1rem;
+  text-align: left;
+  cursor: pointer;
+  touch-action: manipulation;
+  display: flex;
+  flex-direction: column;
+  gap: 0.2rem;
+  min-height: 7rem;
+}
+.choice .big-word { font-family: var(--font-display); font-weight: 900; font-size: 2.6rem; line-height: 0.9; }
+.choice .sub { font-size: 0.9rem; color: var(--fg-soft); }
+.week-list { list-style: none; margin: 0; padding: 0; border-top: 3px solid var(--fg); }
+.week-list li { display: grid; grid-template-columns: 3rem minmax(0, 1fr) auto; gap: 0.5rem; align-items: baseline; padding: 0.55rem 0; border-bottom: 1px solid var(--line); }
+.week-list .d { font-family: var(--font-display); font-weight: 800; font-size: 1.3rem; line-height: 1; }
+.week-list .w { min-width: 0; }
+.week-list .w > span { display: block; }
+.week-list .w .muted { color: var(--fg-soft); }
+.week-list .tick { font-weight: 700; color: var(--good); white-space: nowrap; }
+.week-list li.is-today .d { color: var(--accent); }
+.week-list li.is-today { background: linear-gradient(90deg, var(--panel), transparent); }
+.section-title { font-family: var(--font-display); font-weight: 800; font-size: 1.9rem; line-height: 1; margin-bottom: 0.4rem; }
+
+/* Run setup and strength plan */
+.session { display: flex; flex-direction: column; gap: 0.8rem; }
+.session-name { font-family: var(--font-display); font-weight: 800; font-size: 2.6rem; line-height: 0.9; text-wrap: balance; }
+.session-sub { color: var(--fg-soft); }
+.steps { list-style: none; margin: 0; padding: 0; border-top: 3px solid var(--fg); }
+.steps li { display: grid; grid-template-columns: minmax(0, 1fr) auto; gap: 0.75rem; align-items: baseline; padding: 0.6rem 0; border-bottom: 1px solid var(--line); }
+.steps .what { font-weight: 600; min-width: 0; }
+.steps .what span { display: block; font-weight: 400; font-size: 0.92rem; color: var(--fg-soft); }
+.steps .how { font-weight: 700; white-space: nowrap; font-variant-numeric: tabular-nums; text-align: right; }
+.total { font-weight: 600; color: var(--fg-soft); }
+.plan { display: flex; flex-direction: column; gap: 1.1rem; }
+.pair { border-top: 3px solid var(--fg); padding-top: 0.35rem; }
+.pair-head { display: flex; justify-content: space-between; }
+.row {
+  appearance: none;
+  width: 100%;
+  background: none;
+  border: 0;
+  border-bottom: 1px solid var(--line);
+  text-align: left;
+  display: grid;
+  grid-template-columns: 2.4rem minmax(0, 1fr) auto;
+  gap: 0.5rem;
+  align-items: baseline;
+  padding: 0.55rem 0;
+  cursor: pointer;
+  touch-action: manipulation;
+}
+.pair .row:last-of-type { border-bottom: 0; }
+.row .tag { font-family: var(--font-display); font-weight: 800; font-size: 1.35rem; line-height: 1; }
+.row .nm { font-weight: 600; min-width: 0; }
+.row .dose { display: block; font-weight: 400; font-size: 0.9rem; color: var(--fg-soft); }
+.row .kg { text-align: right; font-weight: 700; white-space: nowrap; font-variant-numeric: tabular-nums; }
+.row .kg .soft { font-weight: 500; font-size: 0.9rem; }
+.row[aria-expanded="true"] .nm { text-decoration: underline; text-underline-offset: 0.2em; }
+.tap-hint { font-size: 0.85rem; color: var(--fg-soft); margin-top: -0.6rem; }
+.week-note { font-size: 0.95rem; color: var(--fg-soft); margin-top: -0.75rem; }
 .history details { border-top: 1px solid var(--line); }
 .history details:last-of-type { border-bottom: 1px solid var(--line); }
-.history summary {
-  display: flex;
-  justify-content: space-between;
-  gap: 1rem;
-  padding: 0.7rem 0;
-  min-height: 2.75rem;
-  cursor: pointer;
-  list-style: none;
-  font-weight: 600;
-}
+.history summary { display: flex; justify-content: space-between; gap: 1rem; padding: 0.7rem 0; min-height: 2.75rem; cursor: pointer; list-style: none; font-weight: 600; }
 .history summary::-webkit-details-marker { display: none; }
 .history summary .soft { font-weight: 500; white-space: nowrap; font-variant-numeric: tabular-nums; }
 .history ul { list-style: none; margin: 0 0 0.75rem; padding: 0; font-size: 0.92rem; }
 .history li { display: flex; justify-content: space-between; gap: 1rem; padding: 0.15rem 0; font-variant-numeric: tabular-nums; }
-.history li span:first-child { color: var(--fg-soft); }
+.history li span:first-child { color: var(--fg-soft); min-width: 0; }
 .history li span:last-child { font-weight: 600; white-space: nowrap; }
-.fine { font-size: 0.85rem; color: var(--fg-soft); }
-.sticky-bar { position: sticky; bottom: 0; margin-top: auto; padding: 0.75rem 0 1rem; background: var(--bg); }
 
-/* Run */
-.run { padding-top: 0.5rem; gap: 0.5rem; }
-.run-top { display: flex; justify-content: space-between; align-items: baseline; gap: 1rem; font-weight: 700; }
-.run-top .soft { font-weight: 600; font-variant-numeric: tabular-nums; white-space: nowrap; }
-.segs { display: flex; gap: 2px; align-items: center; height: 0.9rem; }
+/* Figure */
+.fig { color: var(--fg); display: flex; justify-content: center; }
+.fig svg { display: block; width: 100%; height: 100%; max-width: 100%; }
+.fig-start { height: 11rem; margin: 0.25rem 0 0.5rem; }
+.fig-set { height: clamp(9.5rem, 27vh, 15rem); }
+.fig-next { height: clamp(8rem, 21vh, 12rem); }
+
+/* Live workout */
+.run { padding-top: 0.4rem; }
+.run-top { display: flex; justify-content: space-between; align-items: center; gap: 0.75rem; min-height: 2.75rem; }
+.run-top .run-title { font-weight: 700; min-width: 0; }
+.run-top .meta { font-size: 0.85rem; font-weight: 600; color: var(--fg-soft); font-variant-numeric: tabular-nums; text-align: right; line-height: 1.3; white-space: nowrap; }
+.prog { height: 0.35rem; border-radius: 0.2rem; background: rgba(127, 127, 127, 0.28); overflow: hidden; margin-top: 0.25rem; }
+.prog > div { height: 100%; background: var(--fg); transform-origin: left center; }
+.segs { display: flex; gap: 2px; align-items: center; height: 0.9rem; margin-top: 0.25rem; }
 .segs span { height: 0.45rem; border-radius: 1px; background: var(--fg); opacity: 0.22; min-width: 2px; }
 .segs span.w { height: 0.65rem; }
 .segs span.done { opacity: 0.65; }
 .segs span.now { opacity: 1; height: 0.9rem; }
-.banner { background: var(--panel); border-radius: 0.75rem; padding: 0.6rem 0.8rem; font-size: 0.92rem; font-weight: 600; }
-.stage { flex: 1; min-height: 0; display: flex; flex-direction: column; justify-content: center; gap: 0.6rem; }
-.phase-name {
-  font-family: var(--font-display);
-  font-weight: 800;
-  font-size: 2.6rem;
-  font-size: clamp(2.3rem, 11vw, 3.4rem);
-  line-height: 0.92;
-}
+.banner { margin-top: 0.5rem; background: var(--panel); border-radius: 0.75rem; padding: 0.55rem 0.8rem; font-size: 0.9rem; font-weight: 600; }
+.stage { flex: 1; min-height: 0; overflow-y: auto; -webkit-overflow-scrolling: touch; display: flex; flex-direction: column; }
+.stage-inner { margin-block: auto; display: flex; flex-direction: column; gap: 0.6rem; padding-block: 0.75rem; }
+.phase-name { font-family: var(--font-display); font-weight: 800; font-size: 2.6rem; font-size: clamp(2.3rem, 11vw, 3.4rem); line-height: 0.92; }
 .phase-sub { font-weight: 600; color: var(--fg-soft); }
-.count {
-  display: flex;
-  align-items: baseline;
-  gap: 0.5rem;
-  margin: 0.2rem 0 0;
-  font-family: var(--font-display);
-  font-weight: 900;
-  font-size: 7rem;
-  font-size: clamp(6rem, 33vw, 10rem);
-  line-height: 0.8;
-  letter-spacing: -0.02em;
-  font-variant-numeric: tabular-nums;
-}
+.count { display: flex; align-items: baseline; gap: 0.5rem; margin: 0.2rem 0 0; font-family: var(--font-display); font-weight: 900; font-size: 7rem; font-size: clamp(5.5rem, 31vw, 9.5rem); line-height: 0.8; letter-spacing: -0.02em; font-variant-numeric: tabular-nums; }
 .count small { font-family: var(--font-ui); font-size: 1.1rem; font-weight: 700; letter-spacing: 0; }
-body.is-paused .count { opacity: 0.35; }
-.bar { height: 0.6rem; border-radius: 0.3rem; background: rgba(127, 127, 127, 0.28); overflow: hidden; }
+body.is-paused .count, body.is-paused .counter .num, body.is-paused .count-big { opacity: 0.35; }
+.bar { height: 0.55rem; border-radius: 0.3rem; background: rgba(127, 127, 127, 0.28); overflow: hidden; }
 .bar > div { height: 100%; background: var(--fg); transform-origin: left center; transform: scaleX(0); }
 .detail { font-weight: 600; font-variant-numeric: tabular-nums; }
 .pace-row { display: grid; grid-template-columns: 1fr 1fr; gap: 0.6rem; }
 .pace-box { background: var(--panel); border-radius: 0.875rem; padding: 0.7rem 0.85rem; display: flex; flex-direction: column; gap: 0.1rem; min-width: 0; }
-.pace-val { font-family: var(--font-display); font-weight: 800; font-size: 2.2rem; line-height: 1; font-variant-numeric: tabular-nums; }
+.pace-val { font-family: var(--font-display); font-weight: 800; font-size: 2.2rem; line-height: 1; font-variant-numeric: tabular-nums; white-space: nowrap; }
 .pace-val small { font-family: var(--font-ui); font-size: 0.85rem; font-weight: 600; }
-.pace-val.window { font-size: 1.75rem; white-space: nowrap; line-height: 1.15; }
-body.locked .controls, body.locked .gps-line { visibility: hidden; }
-.call {
-  display: flex;
-  align-items: baseline;
-  justify-content: space-between;
-  gap: 0.75rem;
-  border-radius: 0.875rem;
-  padding: 0.7rem 0.9rem;
-  background: var(--ok);
-  color: var(--chip-ink);
-  font-weight: 700;
-}
+.pace-val.window { font-size: 1.75rem; line-height: 1.15; }
+.call { display: flex; align-items: baseline; justify-content: space-between; gap: 0.75rem; border-radius: 0.875rem; padding: 0.7rem 0.9rem; background: var(--ok); color: var(--chip-ink); font-weight: 700; }
 .call.fast { background: var(--fast); }
 .call.slow { background: var(--slow); }
 .call .call-word { font-family: var(--font-display); font-weight: 900; font-size: 2rem; line-height: 1; }
 .call .call-meta { font-variant-numeric: tabular-nums; white-space: nowrap; }
 .next { font-weight: 600; }
 .next span { font-weight: 400; color: var(--fg-soft); }
-.controls { display: grid; grid-template-columns: 1fr 1fr 1fr; gap: 0.6rem; padding: 0.25rem 0 0.5rem; }
-.gps-line { display: flex; justify-content: space-between; gap: 1rem; font-size: 0.85rem; font-weight: 600; color: var(--fg-soft); padding-bottom: 0.75rem; font-variant-numeric: tabular-nums; }
-.confirm { background: var(--panel); border-radius: 1rem; padding: 1rem; display: flex; flex-direction: column; gap: 0.6rem; margin-bottom: 0.75rem; }
+.controls { display: grid; gap: 0.6rem; padding: 0.5rem 0 0.5rem; }
+.controls.two { grid-template-columns: 1fr 1.5fr; }
+.controls.three { grid-template-columns: 1fr 1fr 1fr; }
+.controls.last { padding-bottom: 1rem; }
+.gps-line { display: flex; justify-content: space-between; align-items: center; gap: 1rem; font-size: 0.85rem; font-weight: 600; color: var(--fg-soft); padding-bottom: 0.75rem; font-variant-numeric: tabular-nums; }
+.gps-line .link-btn { padding: 0; min-height: 2rem; }
+body.locked .controls, body.locked .gps-line { visibility: hidden; }
+.confirm { background: var(--panel); border-radius: 1rem; padding: 1rem; display: flex; flex-direction: column; gap: 0.6rem; margin-bottom: 1rem; }
 .confirm .q { font-weight: 700; font-size: 1.1rem; }
 .confirm .link-btn { align-self: center; }
 
+/* Strength session */
+.tagline { display: flex; align-items: center; gap: 0.6rem; font-weight: 600; color: var(--fg-soft); flex-wrap: wrap; }
+.tag-pill { font-family: var(--font-display); font-weight: 800; font-size: 1.3rem; line-height: 1; padding: 0.3rem 0.55rem 0.25rem; border-radius: 0.5rem; background: var(--fg); color: var(--bg); }
+.ex-name { font-family: var(--font-display); font-weight: 800; font-size: 2.3rem; font-size: clamp(2rem, 9vw, 3rem); line-height: 0.95; text-wrap: balance; }
+.cue { color: var(--fg-soft); font-weight: 500; }
+.counter { display: flex; align-items: baseline; gap: 0.6rem; flex-wrap: wrap; }
+.counter .num { font-family: var(--font-display); font-weight: 900; font-size: 6.5rem; font-size: clamp(5.5rem, 28vw, 8.5rem); line-height: 0.8; letter-spacing: -0.02em; font-variant-numeric: tabular-nums; }
+.counter .of { font-family: var(--font-display); font-weight: 800; font-size: 2rem; line-height: 1; color: var(--fg-soft); }
+.counter .side { font-weight: 700; margin-left: auto; text-align: right; }
+.extra { font-weight: 700; }
+.extra:empty { display: none; }
+.count-big { font-family: var(--font-display); font-weight: 900; font-size: 6rem; font-size: clamp(5rem, 26vw, 8rem); line-height: 0.8; letter-spacing: -0.02em; font-variant-numeric: tabular-nums; }
+.lead-word { font-weight: 700; font-size: 1.1rem; color: var(--fg-soft); }
+.next-card { background: var(--panel); border-radius: 1rem; padding: 0.9rem 1rem 1rem; display: flex; flex-direction: column; gap: 0.45rem; }
+.next-card .ex-name { font-size: 2rem; }
+.weight { display: flex; flex-direction: column; gap: 0.35rem; }
+.stepper { display: grid; grid-template-columns: 3.25rem minmax(0, 1fr) 3.25rem; align-items: center; gap: 0.5rem; }
+.step-btn { height: 3.25rem; border-radius: 0.875rem; border: 2px solid var(--fg); background: transparent; font-size: 1.8rem; font-weight: 600; line-height: 1; cursor: pointer; touch-action: manipulation; }
+.kg-wrap { display: flex; align-items: baseline; justify-content: center; gap: 0.3rem; min-width: 0; }
+.kg-input { width: 4ch; min-width: 0; padding: 0; border: 0; border-bottom: 3px solid var(--fg); border-radius: 0; background: transparent; color: var(--fg); font-family: var(--font-display); font-weight: 900; font-size: 3.25rem; line-height: 1; text-align: center; font-variant-numeric: tabular-nums; }
+.kg-input::placeholder { color: var(--fg-soft); opacity: 0.6; }
+.kg-unit { font-weight: 700; }
+.weight-note { font-size: 0.9rem; color: var(--fg-soft); }
+.err { color: var(--warn); font-weight: 700; font-size: 0.95rem; }
+.err:empty { display: none; }
+.set-weight { display: flex; align-items: center; justify-content: space-between; gap: 0.75rem; background: var(--panel); border-radius: 0.875rem; padding: 0.5rem 0.6rem 0.5rem 0.9rem; }
+.set-weight strong { font-family: var(--font-display); font-weight: 800; font-size: 1.6rem; line-height: 1; font-variant-numeric: tabular-nums; }
+.set-weight .mini { display: flex; gap: 0.4rem; }
+.set-weight .step-btn { height: 2.75rem; width: 2.75rem; font-size: 1.5rem; }
+.swap { font-size: 0.9rem; font-weight: 600; color: var(--warn); }
+body[data-phase="work"] .swap { color: var(--fg); }
+.warm-list { margin: 0; padding: 0; list-style: none; display: flex; flex-direction: column; gap: 0.5rem; }
+.warm-list li { padding: 0.8rem 1rem; background: var(--panel); border-radius: 0.75rem; font-weight: 600; }
+
 /* Touch lock */
-.lock {
-  position: fixed;
-  inset: 0;
-  z-index: 50;
-  display: flex;
-  align-items: flex-end;
-  justify-content: center;
-  padding: 0 max(16px, env(safe-area-inset-right, 0px)) calc(env(safe-area-inset-bottom, 0px) + 1rem) max(16px, env(safe-area-inset-left, 0px));
-  -webkit-user-select: none;
-  user-select: none;
-  -webkit-touch-callout: none;
-  touch-action: none;
-}
-.unlock {
-  position: relative;
-  overflow: hidden;
-  appearance: none;
-  width: 100%;
-  max-width: 34rem;
-  min-height: 3.5rem;
-  border-radius: 999px;
-  border: 2px solid var(--fg);
-  background: var(--bg);
-  color: var(--fg);
-  font-weight: 700;
-  font-size: 1.05rem;
-  cursor: pointer;
-  -webkit-user-select: none;
-  user-select: none;
-  -webkit-touch-callout: none;
-}
+.lock { position: fixed; inset: 0; z-index: 50; display: flex; align-items: flex-end; justify-content: center; padding: 0 max(16px, env(safe-area-inset-right, 0px)) calc(env(safe-area-inset-bottom, 0px) + 1rem) max(16px, env(safe-area-inset-left, 0px)); -webkit-user-select: none; user-select: none; -webkit-touch-callout: none; touch-action: none; }
+.unlock { position: relative; overflow: hidden; appearance: none; width: 100%; max-width: 34rem; min-height: 3.5rem; border-radius: 999px; border: 2px solid var(--fg); background: var(--bg); color: var(--fg); font-weight: 700; font-size: 1.05rem; cursor: pointer; -webkit-user-select: none; user-select: none; -webkit-touch-callout: none; }
 .unlock-fill { position: absolute; inset: 0; background: var(--fg); opacity: 0.25; transform: scaleX(0); transform-origin: left center; }
 .unlock.holding .unlock-fill { transform: scaleX(1); transition: transform 0.8s linear; }
 .unlock-text { position: relative; }
 
 /* Done */
 .done { overflow-y: auto; -webkit-overflow-scrolling: touch; gap: 1.1rem; padding-top: 1.75rem; }
-.done-title { font-family: var(--font-display); font-weight: 900; font-size: 6rem; font-size: clamp(5rem, 28vw, 9rem); line-height: 0.8; }
+.done-title { font-family: var(--font-display); font-weight: 900; font-size: 5rem; font-size: clamp(4rem, 22vw, 7rem); line-height: 0.8; }
 .done-meta { font-weight: 600; font-size: 1.1rem; }
-.reps { list-style: none; margin: 0; padding: 0; }
+.summary, .reps { list-style: none; margin: 0; padding: 0; }
+.summary li { display: flex; justify-content: space-between; gap: 1rem; padding: 0.55rem 0; border-top: 1px solid rgba(127, 127, 127, 0.35); }
+.summary li span:first-child { min-width: 0; }
+.summary li span:last-child { font-weight: 700; white-space: nowrap; font-variant-numeric: tabular-nums; text-align: right; }
 .reps li { padding: 0.65rem 0; border-top: 1px solid rgba(127, 127, 127, 0.35); display: flex; flex-direction: column; gap: 0.15rem; }
 .rep-main { display: flex; justify-content: space-between; gap: 1rem; font-weight: 700; font-variant-numeric: tabular-nums; }
 .rep-main span:first-child { min-width: 0; }
 .rep-main span:last-child { white-space: nowrap; }
 .rep-splits { font-size: 0.9rem; color: var(--fg-soft); font-variant-numeric: tabular-nums; }
+.km-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(5.5rem, 1fr)); gap: 0.4rem; }
+.km-grid div { background: var(--panel); border-radius: 0.6rem; padding: 0.4rem 0.6rem; font-variant-numeric: tabular-nums; }
+.km-grid b { display: block; font-family: var(--font-display); font-size: 1.5rem; line-height: 1; }
+.km-grid span { font-size: 0.8rem; color: var(--fg-soft); }
+.done-next { color: var(--fg-soft); max-width: 40ch; }
 .done-actions { display: grid; gap: 0.6rem; }
 .copy-box { width: 100%; min-height: 8rem; font: 0.85rem/1.4 ui-monospace, Menlo, monospace; border-radius: 0.75rem; border: 1px solid var(--line); padding: 0.6rem; background: var(--panel); color: var(--fg); }
 
+.gallery { display: grid; grid-template-columns: 1fr 1fr; gap: 0.5rem; padding: 1rem 0; overflow-y: auto; }
+.gallery div { border: 1px solid var(--line); border-radius: 0.5rem; padding: 0.25rem; font-size: 0.75rem; }
+.gallery .fig { height: 8rem; }
 .sr-only { position: absolute; width: 1px; height: 1px; padding: 0; margin: -1px; overflow: hidden; clip: rect(0, 0, 0, 0); white-space: nowrap; border: 0; }
-@media (prefers-reduced-motion: reduce) {
-  body, .unlock.holding .unlock-fill { transition: none; }
-}
+@media (max-width: 360px) { .fields, .choices { grid-template-columns: 1fr; } }
+@media (prefers-reduced-motion: reduce) { body, .unlock.holding .unlock-fill { transition: none; } }
 </style>
 </head>
 <body data-phase="idle">
@@ -369,15 +421,22 @@ body.locked .controls, body.locked .gps-line { visibility: hidden; }
 <script>
 (() => {
   "use strict";
+  const TEST = /^#test/.test(location.hash), T0 = Date.now();
 
-  // ---------- Plan ----------
-  const PLAN_START = new Date(2026, 10, 16); // Mon 16 Nov 2026 = week 1
+  // =====================================================================
+  // Plan
+  // =====================================================================
+  const PLAN_START = new Date(2026, 10, 16); // Monday 16 Nov 2026 = week 1
+  const DAYS = ["Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday", "Sunday"];
+  const DAYS3 = ["Mon", "Tue", "Wed", "Thu", "Fri", "Sat", "Sun"];
+
+  // Interval sessions (Tuesday)
   const ZONES = {
     threshold: { name: "threshold", target: 257, band: "4:15–4:20" },
     race:      { name: "race pace", target: 245, band: "4:04–4:06" },
     intervals: { name: "interval pace", target: 237, band: "3:55–4:00" }
   };
-  const PLAN = [
+  const INTERVALS = [
     { w: 1,  reps: 4, kind: "time", work: 360,  rest: 90,  zone: "threshold" },
     { w: 2,  reps: 3, kind: "time", work: 480,  rest: 120, zone: "threshold" },
     { w: 3,  reps: 6, kind: "dist", work: 800,  rest: 90,  zone: "intervals" },
@@ -390,15 +449,109 @@ body.locked .controls, body.locked .gps-line { visibility: hidden; }
     { w: 10, reps: 3, kind: "dist", work: 1000, rest: 120, zone: "race" }
   ];
   const WARMUP = 720, COOLDOWN = 480, STRIDES = [480, 540, 600, 660], STRIDE_LEN = 20;
-  const SPLIT = 250, MAX_ACC = 30, KEY = "sub41-intervals-v1";
-  const PHRASE = { fast: "Slow down", slow: "Speed up", on: "On pace" };
 
-  // Hidden test mode: #sim or #sim=20 runs a sped-up simulated run with fake GPS
-  const SIM = (() => { const m = location.hash.match(/^#sim(?:=(\d+))?$/); return m ? (+m[1] || 20) : 0; })();
-  const simBase = Date.now();
-  const now = () => SIM ? simBase + (Date.now() - simBase) * SIM : Date.now();
+  // Easy and long runs are set by distance. Segment types and how each is paced.
+  const SEG = {
+    easy:  { label: "Easy",               mode: "fast",   lo: 315,              pace: 330, desc: "easy, 5:15–5:45/km", phase: "idle" },
+    steady:{ label: "Steady",             mode: "target", target: 285,          pace: 285, desc: "steady, 4:40–4:50/km", phase: "work" },
+    build: { label: "Build to threshold", mode: "band",   lo: 255, hi: 290,     pace: 270, desc: "building from 4:45 to 4:20/km", phase: "work" },
+    race:  { label: "Race pace",          mode: "target", target: 245, half: true, pace: 245, desc: "race pace, 4:05/km", phase: "work" },
+    first: { label: "First km",           mode: "target", target: 247,          pace: 247, desc: "4:06–4:08/km, hold back", phase: "work" },
+    hold:  { label: "Lock in",            mode: "target", target: 245,          pace: 245, desc: "4:04–4:05/km, run even", phase: "work" },
+    push:  { label: "Push",               mode: "target", target: 242,          pace: 242, desc: "push if you feel good", phase: "work" }
+  };
+  const LONG = {
+    1: { list: [["easy", 8500]], title: "8.5 km easy" },
+    2: { list: [["easy", 6500], ["steady", 2000]], title: "8.5 km, last 2 km steady" },
+    3: { list: [["easy", 6000], ["build", 3000]], title: "9 km, last 3 km building" },
+    4: { list: [["easy", 7000]], title: "7 km easy" },
+    5: { list: [["easy", 8500]], title: "8.5 km easy" },
+    6: { list: [["easy", 3000], ["race", 2000], ["easy", 500], ["race", 2000], ["easy", 1500]], title: "9 km with 2 × 2 km race pace" },
+    7: { list: [["easy", 6000], ["build", 3000]], title: "9 km, last 3 km building" },
+    8: { list: [["easy", 3000], ["race", 1500], ["easy", 500], ["race", 1500], ["easy", 500], ["race", 1500], ["easy", 1000]], title: "9.5 km with 3 × 1.5 km race pace" },
+    9: { list: [["easy", 8000]], title: "8 km easy, 6 strides", strides: { from: 6800, n: 6 } }
+  };
+  function mkCont(kind, w, title, list, strides, v) {
+    let pos = 0;
+    const segs = list.map(([key, dist]) => {
+      const s = Object.assign({ key: key, dist: dist, start: pos, end: pos + dist }, SEG[key]);
+      pos += dist;
+      return s;
+    });
+    return { kind: kind, w: w, v: v || null, title: title, segs: segs, total: pos, strides: strides ? Object.assign({ on: 20, off: 40 }, strides) : null };
+  }
+  function easyPlan(w, v) {
+    const light = isLight(w) || w >= 10, dist = light ? 4000 : 5000;
+    let strides = null;
+    if (v === "thu") strides = w >= 10 ? { from: 2800, n: 4 } : light ? { from: 2400, n: 6 } : { from: 3200, n: 6 };
+    return mkCont("easy", w, dist / 1000 + " km easy" + (strides ? ", " + strides.n + " strides" : ""), [["easy", dist]], strides, v);
+  }
+  function longPlan(w) {
+    if (w >= 10) return mkCont("race", 10, "Race: 10 km", [["first", 1000], ["hold", 6000], ["push", 3000]], null);
+    const L = LONG[Math.max(1, w)];
+    return mkCont("long", w, L.title, L.list, L.strides, null);
+  }
+  function intervalPlan(w) { return INTERVALS.find((p) => p.w === Math.min(10, Math.max(1, w))); }
+  function fmtWork(p) { return p.kind === "time" ? p.work / 60 + " min" : p.work >= 1000 ? p.work / 1000 + " km" : p.work + " m"; }
+  function iTitle(p) { return p.reps + " × " + fmtWork(p) + " " + ZONES[p.zone].name; }
+  function contEst(plan) {
+    let t = plan.segs.reduce((a, s) => a + s.dist / 1000 * s.pace, 0);
+    return t;
+  }
+  function iEst(p) {
+    const work = p.kind === "time" ? p.work : p.work / 1000 * ZONES[p.zone].target;
+    return WARMUP + p.reps * work + (p.reps - 1) * p.rest + COOLDOWN;
+  }
 
-  // ---------- Helpers ----------
+  // Strength
+  const STEP = 2, RESTS = [45, 60, 75, 90], READY = 15, CHANGE = 20, GO = 5, GAP = 5, PAIRS = "ABC";
+  const EX = {
+    "a-split":   { name: "Rear-foot elevated split squat", say: "split squat", cue: "Back foot on the bench", reps: 8, per: "leg", load: "pair", legs: true, anim: "split", swap: "Hip at 4/10 or more? Do step-ups instead." },
+    "a-row":     { name: "Single-arm dumbbell row", say: "single-arm row", cue: "Free hand on the bench", reps: 10, per: "arm", load: "single", anim: "row1" },
+    "a-rdl":     { name: "Dumbbell Romanian deadlift", say: "Romanian deadlift", cue: "Push your hips back, soft knees", reps: 10, load: "pair", legs: true, anim: "rdl", swap: "Hip at 4/10 or more? Do hip thrusts instead." },
+    "a-bench":   { name: "Dumbbell bench press", say: "bench press", cue: "Flat bench, feet on the floor", reps: 8, max: 10, load: "pair", anim: "bench" },
+    "a-plank":   { name: "Side plank with top-leg lift", say: "side plank", cue: "Hips high, lift the top leg slowly", hold: 30, per: "side", load: "none", anim: "plank" },
+    "a-calf":    { name: "Single-leg calf raise", say: "calf raise", cue: "Hold a dumbbell, or set 0 for bodyweight", reps: 15, per: "leg", load: "single", legs: true, allowZero: true, anim: "calf" },
+    "b-step":    { name: "Step-up onto the bench", say: "step-up", cue: "Drive up, slow on the way down", reps: 8, per: "leg", load: "pair", legs: true, anim: "step" },
+    "b-incline": { name: "Incline dumbbell press", say: "incline press", cue: "Bench on an incline", reps: 10, load: "pair", anim: "incline" },
+    "b-slrdl":   { name: "Single-leg Romanian deadlift", say: "single-leg deadlift", cue: "Dumbbell in the hand opposite the standing leg", reps: 8, per: "leg", load: "single", legs: true, anim: "slrdl", swap: "Hip at 4/10 or more? Do marching glute bridges instead." },
+    "b-row":     { name: "Chest-supported row", say: "chest-supported row", cue: "Face down on the incline bench", reps: 10, max: 12, load: "pair", anim: "row2" },
+    "b-thrust":  { name: "Dumbbell hip thrust", say: "hip thrust", cue: "Shoulders on the bench, dumbbell on your hips", reps: 12, load: "single", legs: true, anim: "thrust" },
+    "b-march":   { name: "Suitcase march", say: "suitcase march", cue: "One heavy dumbbell, stand tall", hold: 30, per: "hand", load: "single", anim: "march" }
+  };
+  const SESSIONS = {
+    A: { name: "Strength A", day: "Monday", pairs: [["a-split", "a-row"], ["a-rdl", "a-bench"], ["a-plank", "a-calf"]] },
+    B: { name: "Strength B", day: "Thursday", pairs: [["b-step", "b-incline"], ["b-slrdl", "b-row"], ["b-thrust", "b-march"]] }
+  };
+  const WARM_MOVES = ["Glute bridge × 12", "90/90 hip switches × 6 per side", "Dead bug × 6 per side"];
+  const SWITCH = { leg: "Switch legs.", arm: "Switch arms.", side: "Switch sides.", hand: "Switch hands." };
+
+  // The week
+  function weekSchedule(w) {
+    const ww = Math.min(Math.max(1, w), 10);
+    if (ww === 10) return [
+      [{ t: "strength", s: "A", label: "Strength A, light" }, { t: "easy", v: "mon", label: easyPlan(10, "mon").title }],
+      [{ t: "intervals", label: "Intervals: " + iTitle(intervalPlan(10)) }],
+      [{ t: "note", label: "Rest. Skip padel this week" }],
+      [{ t: "easy", v: "thu", label: easyPlan(10, "thu").title }],
+      [{ t: "note", label: "Rest, or 15 min very easy" }],
+      [{ t: "long", label: "Race day: 10 km" }],
+      [{ t: "note", label: "Rest" }]
+    ];
+    return [
+      [{ t: "strength", s: "A", label: "Strength A" }, { t: "easy", v: "mon", label: easyPlan(ww, "mon").title }],
+      [{ t: "intervals", label: "Intervals: " + iTitle(intervalPlan(ww)) }],
+      [{ t: "note", label: "Padel" }],
+      [{ t: "strength", s: "B", label: "Strength B" }, { t: "easy", v: "thu", label: easyPlan(ww, "thu").title }],
+      [{ t: "note", label: "Rest" }],
+      [{ t: "long", label: "Long run: " + longPlan(ww).title }],
+      [{ t: "note", label: "Rest, plus the desk reset" }]
+    ];
+  }
+
+  // =====================================================================
+  // Helpers
+  // =====================================================================
   const $ = (id) => document.getElementById(id);
   const esc = (s) => String(s).replace(/[&<>"']/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[c]));
   const pad = (n) => (n < 10 ? "0" : "") + n;
@@ -412,29 +565,39 @@ body.locked .controls, body.locked .gps-line { visibility: hidden; }
     return m + " " + (sec < 10 ? "oh " + sec : sec);
   }
   function fmtClock(ms) {
-    const t = Math.max(0, Math.round(ms / 1000)), m = Math.floor(t / 60);
-    return m + ":" + pad(t % 60);
+    const t = Math.max(0, Math.round(ms / 1000)), h = Math.floor(t / 3600), m = Math.floor((t % 3600) / 60);
+    return (h ? h + ":" + pad(m) : m) + ":" + pad(t % 60);
   }
-  function fmtDist(m) {
-    if (m < 1000) return Math.round(m) + " m";
-    return (m / 1000).toFixed(2) + " km";
+  function spokenTime(sec) {
+    const t = Math.round(sec), m = Math.floor(t / 60), s = t % 60;
+    return m + " minutes" + (s ? " " + s : "");
   }
-  function fmtWork(p) { return p.kind === "time" ? p.work / 60 + " min" : p.work >= 1000 ? p.work / 1000 + " km" : p.work + " m"; }
-  function fmtRest(s) { return s >= 120 && s % 60 === 0 ? s / 60 + " min" : s + " s"; }
-  function title(p) { return p.reps + " × " + fmtWork(p); }
-  function tuesday(w) { return new Date(2026, 10, 17 + 7 * (w - 1)); }
-  function fmtDay(d) {
-    try { return d.toLocaleDateString("en-GB", { weekday: "short", day: "numeric", month: "short" }); } catch (e) { return ""; }
+  function fmtDist(m) { return m < 1000 ? Math.round(m) + " m" : (m / 1000).toFixed(2) + " km"; }
+  function fmtKm(m) { return (Math.round(m / 100) / 10) + " km"; }
+  function spokenDist(m) {
+    if (m >= 950) { const k = Math.round(m / 100) / 10; return k + (k === 1 ? " kilometre" : " kilometres"); }
+    return Math.max(10, Math.round(m / 10) * 10) + " metres";
   }
-  function currentWeek() {
-    const t = new Date(), d = new Date(t.getFullYear(), t.getMonth(), t.getDate());
-    const days = Math.round((d - PLAN_START) / 864e5);
-    return Math.min(10, Math.max(1, Math.floor(days / 7) + 1));
+  const fmtKg = (kg) => String(Math.round(kg * 10) / 10);
+  function parseKg(v) {
+    const s = String(v == null ? "" : v).trim().replace(",", ".");
+    if (s === "") return null;
+    const n = parseFloat(s);
+    if (!isFinite(n) || n < 0 || n > 150) return null;
+    return Math.round(n * 2) / 2;
   }
-  function estSeconds(p) {
-    const work = p.kind === "time" ? p.work : p.work / 1000 * ZONES[p.zone].target;
-    return WARMUP + p.reps * work + (p.reps - 1) * p.rest + COOLDOWN;
+  function fmtDay(d) { try { return new Date(d).toLocaleDateString("en-GB", { weekday: "short", day: "numeric", month: "short" }); } catch (e) { return ""; } }
+  function planWeek(d) {
+    d = d || new Date();
+    const t = new Date(d.getFullYear(), d.getMonth(), d.getDate());
+    const days = Math.round((t - PLAN_START) / 864e5);
+    return days < 0 ? 1 : Math.floor(days / 7) + 1;
   }
+  const beforePlan = () => new Date() < PLAN_START;
+  const dayIndex = (d) => ((d || new Date()).getDay() + 6) % 7;
+  const dateOf = (w, di) => new Date(2026, 10, 16 + 7 * (w - 1) + di);
+  const isLight = (w) => w === 4 || w === 9;
+  const shortWeek = (w) => (w > 10 ? "After race" : "Week " + w);
   function geoDist(a, b) {
     const R = 6371000, r = Math.PI / 180;
     const dLat = (b.lat - a.lat) * r, dLon = (b.lon - a.lon) * r;
@@ -442,56 +605,78 @@ body.locked .controls, body.locked .gps-line { visibility: hidden; }
     return 2 * R * Math.asin(Math.min(1, Math.sqrt(h)));
   }
 
-  // ---------- Storage ----------
-  let store = { tol: 5, history: [] };
+  // =====================================================================
+  // Storage (same keys as the separate pages, so saved runs and weights carry over)
+  // =====================================================================
+  const RKEY = "sub41-intervals-v1", SKEY = "sub41-coach-v1";
+  let RS = { tol: 5, history: [] };
   try {
-    const raw = localStorage.getItem(KEY);
+    const raw = localStorage.getItem(RKEY);
     if (raw) {
       const d = JSON.parse(raw);
-      if ([3, 5, 8].includes(d.tol)) store.tol = d.tol;
-      if (Array.isArray(d.history)) store.history = d.history.slice(-30);
+      if ([3, 5, 8].includes(d.tol)) RS.tol = d.tol;
+      if (Array.isArray(d.history)) RS.history = d.history.filter((x) => x && x.date).slice(-60);
     }
   } catch (e) {}
-  function save() { try { localStorage.setItem(KEY, JSON.stringify(store)); } catch (e) {} }
+  const saveRuns = () => { try { localStorage.setItem(RKEY, JSON.stringify(RS)); } catch (e) {} };
+  let S = { v: 1, rest: 60, sessions: [], current: null };
+  try {
+    const raw = localStorage.getItem(SKEY);
+    if (raw) {
+      const d = JSON.parse(raw);
+      if (d && typeof d === "object") {
+        if (RESTS.includes(+d.rest)) S.rest = +d.rest;
+        if (Array.isArray(d.sessions)) S.sessions = d.sessions.filter((x) => x && SESSIONS[x.type] && Array.isArray(x.sets));
+        if (d.current && SESSIONS[d.current.type] && Array.isArray(d.current.sets)) S.current = d.current;
+      }
+    }
+  } catch (e) {}
+  const saveStrength = () => { try { localStorage.setItem(SKEY, JSON.stringify(S)); } catch (e) {} };
+  try { if (navigator.storage && navigator.storage.persist) navigator.storage.persist(); } catch (e) {}
+  const runKind = (x) => x.kind || "intervals";
 
-  // ---------- Voice and beeps ----------
+  function isDone(item, w) {
+    if (item.t === "strength") return S.sessions.some((x) => x.type === item.s && x.week === w);
+    if (item.t === "easy") return RS.history.some((x) => runKind(x) === "easy" && x.w === w && x.v === item.v);
+    if (item.t === "intervals") return RS.history.some((x) => runKind(x) === "intervals" && x.w === w);
+    if (item.t === "long") return RS.history.some((x) => (runKind(x) === "long" || runKind(x) === "race") && x.w === w);
+    return false;
+  }
+
+  // =====================================================================
+  // Voice, beeps, screen
+  // =====================================================================
   const synth = "speechSynthesis" in window ? window.speechSynthesis : null;
   let voice = null;
   function pickVoice() {
     if (!synth) return;
     try {
       const vs = synth.getVoices() || [];
-      const gb = vs.filter((v) => /^en[-_]GB/i.test(v.lang));
-      const en = vs.filter((v) => /^en([-_]|$)/i.test(v.lang));
+      const gb = vs.filter((v) => /^en[-_]GB/i.test(v.lang)), en = vs.filter((v) => /^en([-_]|$)/i.test(v.lang));
       voice = gb.find((v) => /Daniel|Arthur|Serena|Kate|Martha|Google UK/i.test(v.name)) || gb.find((v) => v.localService) || gb[0] || en[0] || null;
     } catch (e) { voice = null; }
   }
-  if (synth) {
-    pickVoice();
-    try { synth.addEventListener("voiceschanged", pickVoice); } catch (e) { synth.onvoiceschanged = pickVoice; }
-  }
+  if (synth) { pickVoice(); try { synth.addEventListener("voiceschanged", pickVoice); } catch (e) { synth.onvoiceschanged = pickVoice; } }
   function speakNow(text) {
     try {
       const u = new SpeechSynthesisUtterance(text);
-      if (voice) { u.voice = voice; u.lang = voice.lang; } else { u.lang = "en-GB"; }
-      u.rate = 1.0;
-      u.volume = 1;
+      if (voice) { u.voice = voice; u.lang = voice.lang; } else u.lang = "en-GB";
+      u.rate = 1.05;
       synth.speak(u);
     } catch (e) {}
   }
+  // flush = cut off anything still being said (used for countdowns and phase changes)
   function say(text, flush) {
-    if (SIM) console.log("[cue] " + Math.round((now() - (R ? R.startedAt : now())) / 1000) + "s " + text);
+    if (!text) return;
+    if (TEST) console.log("[cue] " + Math.round((Date.now() - T0) / 1000) + "s " + text);
     const live = $("live"); if (live) live.textContent = text;
     if (!synth) return;
     try {
-      if (flush && (synth.speaking || synth.pending)) {
-        synth.cancel();
-        setTimeout(() => speakNow(text), 60);
-      } else {
-        speakNow(text);
-      }
+      if (flush && (synth.speaking || synth.pending)) { synth.cancel(); setTimeout(() => speakNow(text), 60); }
+      else speakNow(text);
     } catch (e) {}
   }
+  function hush() { if (synth) { try { synth.cancel(); } catch (e) {} } }
   let actx = null;
   function unlockAudio() {
     try {
@@ -511,75 +696,67 @@ body.locked .controls, body.locked .gps-line { visibility: hidden; }
       o.start(t); o.stop(t + dur + 0.03);
     } catch (e) {}
   }
-
-  // ---------- Screen wake lock ----------
   let wake = null, wakeFailed = false;
   function requestWake() {
-    if (SIM) return;
+    if (TEST) return;
     try {
       if (!("wakeLock" in navigator)) { wakeFailed = true; return; }
       if (wake) return;
-      navigator.wakeLock.request("screen").then((w) => {
-        wake = w; wakeFailed = false;
-        w.addEventListener("release", () => { wake = null; });
-      }).catch(() => { wake = null; wakeFailed = true; if (ui.view === "run") paint(now()); });
+      navigator.wakeLock.request("screen").then((w) => { wake = w; wakeFailed = false; w.addEventListener("release", () => { wake = null; }); })
+        .catch(() => { wake = null; wakeFailed = true; });
     } catch (e) { wakeFailed = true; }
   }
   function releaseWake() { try { if (wake) wake.release(); } catch (e) {} wake = null; }
+  const WAKE_MSG = "Your screen may lock on its own. Set Auto-Lock to Never in Settings > Display & Brightness.";
 
-  // ---------- GPS ----------
+  // =====================================================================
+  // GPS
+  // =====================================================================
+  const MAX_ACC = 30;
   const gps = { state: "off", watch: null, last: null, goodAt: 0, acc: null, trail: [], skips: 0 };
-  function gpsHealthy(t) { return gps.goodAt > 0 && t - gps.goodAt < 15000; }
+  const gpsHealthy = (t) => gps.goodAt > 0 && t - gps.goodAt < 15000;
   function startGps() {
     if (gps.watch != null) return;
-    if (SIM) { startSimGps(); return; }
+    if (TEST) { startSimGps(); return; }
     if (!window.isSecureContext) { gps.state = "insecure"; refreshGps(); return; }
     if (!("geolocation" in navigator)) { gps.state = "unsupported"; refreshGps(); return; }
     gps.state = "checking";
-    try {
-      gps.watch = navigator.geolocation.watchPosition(onFix, onGeoError, { enableHighAccuracy: true, maximumAge: 0, timeout: 20000 });
-    } catch (e) { gps.state = "unsupported"; }
+    try { gps.watch = navigator.geolocation.watchPosition(onFix, onGeoError, { enableHighAccuracy: true, maximumAge: 0, timeout: 20000 }); }
+    catch (e) { gps.state = "unsupported"; }
     refreshGps();
   }
   function stopGps() {
     if (gps.watch == null) return;
-    try { if (SIM) clearInterval(gps.watch); else navigator.geolocation.clearWatch(gps.watch); } catch (e) {}
+    try { if (TEST) clearInterval(gps.watch); else navigator.geolocation.clearWatch(gps.watch); } catch (e) {}
     gps.watch = null; gps.last = null; gps.trail = []; gps.goodAt = 0; gps.state = "off";
   }
   function onGeoError(e) {
-    if (e && e.code === 1) {
-      gps.state = "denied";
-      try { navigator.geolocation.clearWatch(gps.watch); } catch (x) {}
-      gps.watch = null;
-    } else {
-      gps.state = gps.goodAt ? "weak" : "searching";
-    }
+    if (e && e.code === 1) { gps.state = "denied"; try { navigator.geolocation.clearWatch(gps.watch); } catch (x) {} gps.watch = null; }
+    else gps.state = gps.goodAt ? "weak" : "searching";
     refreshGps();
   }
   function onFix(p) {
-    const c = p.coords, t = SIM ? p.timestamp : Date.now();
+    const c = p.coords, t = TEST ? p.timestamp : Date.now();
     gps.acc = c.accuracy;
     if (!(c.accuracy <= MAX_ACC)) { gps.state = "weak"; refreshGps(); return; }
     gps.state = "good"; gps.goodAt = t;
-    if (ui.view === "start") refreshGps();
+    if (ui.view === "runSetup") refreshGps();
     const pt = { lat: c.latitude, lon: c.longitude, t: t }, prev = gps.last;
     if (!prev) { gps.last = pt; return; }
     const dt = (t - prev.t) / 1000;
     if (dt < 0.5) return;
     const d = geoDist(prev, pt);
     if (d / dt > 8) { if (++gps.skips >= 3) { gps.last = pt; gps.skips = 0; } return; }
-    gps.skips = 0;
-    gps.last = pt;
+    gps.skips = 0; gps.last = pt;
     if (!R || R.done || R.paused) return;
-    R.totalDist += d;
-    gps.trail.push({ t: t, d: R.totalDist });
+    gps.trail.push({ t: t, d: R.totalDist + d });
     while (gps.trail.length > 2 && t - gps.trail[0].t > 30000) gps.trail.shift();
-    const ph = R.phases[R.i];
-    if (ph.type === "work" && R.cur) advanceRep(ph, d, prev.t, t);
+    if (R.mode === "int") iOnDistance(d, prev.t, t);
+    else cOnDistance(d, prev.t, t);
   }
   function livePace() {
     const tr = gps.trail;
-    if (tr.length < 2 || !gpsHealthy(now())) return null;
+    if (tr.length < 2 || !gpsHealthy(Date.now())) return null;
     const a = tr[0], b = tr[tr.length - 1];
     if (b.d - a.d < 30) return null;
     return (b.t - a.t) / 1000 / ((b.d - a.d) / 1000);
@@ -587,51 +764,52 @@ body.locked .controls, body.locked .gps-line { visibility: hidden; }
   function gpsSummary() {
     switch (gps.state) {
       case "good": return { cls: "good", text: "GPS ready", note: "Accurate to about " + Math.round(gps.acc) + " m." };
-      case "weak": return { cls: "warn", text: "GPS signal weak", note: "Accuracy is " + (gps.acc ? Math.round(gps.acc) + " m" : "poor") + ". Open sky helps; it usually settles during the warm-up." };
+      case "weak": return { cls: "warn", text: "GPS signal weak", note: "Accuracy is " + (gps.acc ? Math.round(gps.acc) + " m" : "poor") + ". Open sky helps; it usually settles in the first few minutes." };
       case "checking":
       case "searching": return { cls: "", text: "Finding GPS…", note: "Stand outside with a clear view of the sky." };
       case "denied": return { cls: "warn", text: "Location is off for this page", note: "Turn it on in Settings > Privacy & Security > Location Services > Safari Websites: While Using, with Precise Location on. Then reload this page." };
       case "insecure": return { cls: "warn", text: "GPS needs your https link", note: "Open the page from its github.io address, not as a saved file." };
-      case "unsupported": return { cls: "warn", text: "No GPS in this browser", note: "Open the page in Safari." };
-      default: return { cls: "", text: "GPS not started", note: "Check it before you set off. The warm-up gives it time to settle." };
+      case "unsupported": return { cls: "warn", text: "No GPS in this browser", note: "Open the page in Safari on your iPhone." };
+      default: return { cls: "", text: "GPS not started", note: "Check it before you set off." };
     }
   }
   function refreshGps() {
-    if (ui.view === "start") {
-      const s = gpsSummary(), a = $("gpsStatus"), b = $("gpsNote");
-      if (a) a.innerHTML = '<span class="dot ' + s.cls + '"></span>' + esc(s.text);
-      if (b) b.textContent = s.note;
-      const btn = $("gpsBtn"); if (btn) btn.hidden = gps.state !== "off" && gps.state !== "denied";
-    }
+    if (ui.view !== "runSetup") return;
+    const s = gpsSummary(), a = $("gpsStatus"), b = $("gpsNote"), btn = $("gpsBtn");
+    if (a) a.innerHTML = '<span class="dot ' + s.cls + '"></span>' + esc(s.text);
+    if (b) b.textContent = s.note;
+    if (btn) btn.hidden = gps.state !== "off" && gps.state !== "denied";
   }
-
-  // Simulated GPS for test mode
-  let simPace = 330;
+  // Test mode: fake GPS that runs at roughly the target pace of whatever you're doing
+  let simPace = 330, simSegAt = 0;
   function startSimGps() {
     gps.state = "checking";
-    let lat = 51.515, lon = -0.09, lastT = now(), drift = 0, simSegAt = 0;
+    let lat = 51.515, lastT = Date.now(), drift = 0;
     gps.watch = setInterval(() => {
-      const t = now();
+      const t = Date.now();
       while (t - lastT >= 1000) {
         lastT += 1000;
-        let pace = 330;
-        if (R && !R.done && R.phases[R.i].type === "work") {
-          if (lastT - simSegAt > 55000) { simSegAt = lastT; simPace = ZONES[R.plan.zone].target + (Math.random() * 22 - 11); }
-          pace = simPace;
+        let base = 330, spread = 18;
+        if (R && !R.done) {
+          if (R.mode === "int") { const ph = R.phases[R.i]; if (ph.type === "work") { base = ZONES[R.plan.zone].target; spread = 11; } }
+          else { const sg = R.segs[R.segIdx]; base = sg.pace - (sg.key === "easy" ? 8 : 0); spread = sg.key === "easy" ? 14 : 8; }
         }
-        if (!(R && R.paused)) lat += (1000 / pace) / 111320;
+        if (lastT - simSegAt > 50000) { simSegAt = lastT; simPace = base + (Math.random() * 2 - 1) * spread; }
+        if (Math.abs(simPace - base) > spread + 1) simPace = base;
+        if (!(R && R.paused)) lat += (1000 / simPace) / 111320;
         drift = Math.max(-3, Math.min(3, drift + (Math.random() - 0.5) * 0.6));
-        onFix({ coords: { latitude: lat + drift / 111320, longitude: lon, accuracy: 6 }, timestamp: lastT });
+        onFix({ coords: { latitude: lat + drift / 111320, longitude: -0.09, accuracy: 6 }, timestamp: lastT });
       }
     }, 50);
   }
 
-  // ---------- Run engine ----------
-  let R = null, ticker = null, hiddenAt = 0;
-  const ui = { view: "start", week: null, confirmEnd: false, locked: false, lastRun: null, copyText: null };
+  // =====================================================================
+  // Run engine: intervals (time and distance reps)
+  // =====================================================================
+  let R = null, rTicker = null, hiddenAt = 0;
+  const SPLIT = 250, PHRASE = { fast: "Slow down", slow: "Speed up", on: "On pace" };
 
-  function planFor(w) { return PLAN.find((p) => p.w === w) || PLAN[0]; }
-  function buildPhases(p) {
+  function iBuild(p) {
     const a = [{ type: "warmup", dur: WARMUP }];
     for (let n = 1; n <= p.reps; n++) {
       if (p.kind === "time") a.push({ type: "work", n: n, kind: "time", dur: p.work });
@@ -641,54 +819,33 @@ body.locked .controls, body.locked .gps-line { visibility: hidden; }
     a.push({ type: "cool", dur: COOLDOWN });
     return a;
   }
-  function phaseSecs(ph) { return ph.dur != null ? ph.dur : ph.est; }
-
-  function startRun() {
-    unlockAudio();
-    const w = ui.week || currentWeek(), p = planFor(w), t = now();
-    R = { plan: p, w: w, phases: buildPhases(p), i: 0, phaseStart: t, startedAt: t, paused: false, pauseAt: 0,
+  const phaseSecs = (ph) => (ph.dur != null ? ph.dur : ph.est);
+  function iStart(w) {
+    const p = intervalPlan(w), t = Date.now();
+    R = { mode: "int", kind: "intervals", plan: p, w: w, title: iTitle(p), phases: iBuild(p), i: 0, phaseStart: t, startedAt: t, paused: false, pauseAt: 0,
           fired: {}, reps: [], cur: null, totalDist: 0, done: false, lastCall: null, note: null };
-    gps.trail = [];
-    startGps();
     say("Start workout. Warm up.", true);
     beep(1320, 0.3, 0.3);
-    requestWake();
-    ui.view = "run"; ui.confirmEnd = false;
-    setLock(true);
-    clearInterval(ticker);
-    ticker = setInterval(tick, SIM ? 50 : 250);
-    render();
   }
-
-  function tick() {
-    if (!R || R.done) return;
-    const t = now();
-    if (!R.paused) {
-      for (let g = 0; g < 80 && !R.done; g++) {
-        const ph = R.phases[R.i], el = t - R.phaseStart;
-        if (ph.dur != null) {
-          if (el >= ph.dur * 1000) { finishPhase(R.phaseStart + ph.dur * 1000); continue; }
-        } else {
-          // Distance reps end on GPS distance; without a GPS signal they fall back to the target time
-          const fb = ph.est * 1000, endAt = gpsHealthy(t) ? 2 * fb : fb;
-          if (el >= endAt) { if (R.cur) R.cur.onTime = true; finishPhase(R.phaseStart + endAt); continue; }
-        }
-        break;
+  function iTick(t) {
+    const run = R;
+    for (let g = 0; g < 80 && !run.done; g++) {
+      const ph = R.phases[R.i], el = t - R.phaseStart;
+      if (ph.dur != null) { if (el >= ph.dur * 1000) { iFinishPhase(R.phaseStart + ph.dur * 1000); continue; } }
+      else {
+        // Distance reps end on GPS distance; without GPS they fall back to the target time
+        const fb = ph.est * 1000, endAt = gpsHealthy(t) ? 2 * fb : fb;
+        if (el >= endAt) { if (R.cur) R.cur.onTime = true; iFinishPhase(R.phaseStart + endAt); continue; }
       }
-      if (!R.done) cues(t);
+      break;
     }
-    if (!R.done) paint(t);
-  }
-
-  function cues(t) {
+    if (run.done) return;
     const ph = R.phases[R.i], el = (t - R.phaseStart) / 1000, nx = R.phases[R.i + 1];
-    const at = (key, sec, fn) => {
-      if (el >= sec && !R.fired[key]) { R.fired[key] = true; if (el - sec < 4) fn(); }
-    };
+    const at = (key, sec, fn) => { if (el >= sec && !R.fired[key]) { R.fired[key] = true; if (el - sec < 4) fn(); } };
     if (ph.type === "warmup") {
       STRIDES.forEach((s, k) => {
         at("s" + k, s, () => { say("Stride " + (k + 1) + " of 4. Go.", true); beep(1320, 0.2, 0.25); });
-        at("e" + k, s + STRIDE_LEN, () => { say("Ease off.", true); });
+        at("e" + k, s + STRIDE_LEN, () => say("Ease off.", true));
       });
     }
     if (ph.dur != null && ph.type !== "work" && nx && nx.type === "work") {
@@ -696,20 +853,18 @@ body.locked .controls, body.locked .gps-line { visibility: hidden; }
       [3, 2, 1].forEach((k) => at("c" + k, ph.dur - k, () => { say(String(k), true); beep(880, 0.12, 0.25); }));
     }
   }
-
-  function transitionText(ph, nx) {
+  function iTransition(ph, nx) {
     if (ph.type === "warmup") return "End warm-up. Start interval " + nx.n + ".";
     if (ph.type === "work" && nx.type === "rest") return "End interval " + ph.n + ". Start rest " + nx.n + ".";
     if (ph.type === "rest") return "Start interval " + nx.n + ".";
     if (ph.type === "work" && nx.type === "cool") return "End of intervals. Start warm-down.";
     return "";
   }
-
-  function finishPhase(endT) {
+  function iFinishPhase(endT) {
     const ph = R.phases[R.i];
-    if (ph.type === "work") closeRep(endT);
+    if (ph.type === "work") iCloseRep(endT);
     R.i++;
-    const late = now() - endT > 5000;
+    const late = Date.now() - endT > 5000;
     if (R.i >= R.phases.length) {
       if (!late) { say("End workout.", true); beep(660, 0.15, 0.25); setTimeout(() => beep(990, 0.4, 0.3), 180); }
       finishRun(endT, true);
@@ -717,207 +872,814 @@ body.locked .controls, body.locked .gps-line { visibility: hidden; }
     }
     const nx = R.phases[R.i];
     R.phaseStart = endT; R.fired = {};
-    if (nx.type === "work") openRep(nx, endT);
-    if (!late) {
-      say(transitionText(ph, nx), true);
-      if (nx.type === "work") beep(1320, 0.35, 0.3); else beep(523, 0.3, 0.25);
-    }
+    if (nx.type === "work") { R.cur = { n: nx.n, start: endT, dist: 0, nextMark: SPLIT, markAt: endT, splits: [], onTime: false, skipped: false }; R.lastCall = null; }
+    if (!late) { say(iTransition(ph, nx), true); if (nx.type === "work") beep(1320, 0.35, 0.3); else beep(523, 0.3, 0.25); }
     if (ui.view === "run") renderRun();
   }
-
-  function openRep(ph, t) {
-    R.cur = { n: ph.n, start: t, dist: 0, nextMark: SPLIT, markAt: t, splits: [], onTime: false, skipped: false };
-    R.lastCall = null;
-  }
-  function closeRep(t) {
+  function iCloseRep(t) {
     const rep = R.cur; if (!rep) return;
     rep.time = Math.max(0, (t - rep.start) / 1000);
     rep.pace = rep.dist >= 50 ? rep.time / (rep.dist / 1000) : null;
-    R.reps.push({ n: rep.n, dist: Math.round(rep.dist), time: Math.round(rep.time), pace: rep.pace,
-                  splits: rep.splits.map((s) => Math.round(s.pace)), onTime: rep.onTime, skipped: rep.skipped });
+    R.reps.push({ n: rep.n, dist: Math.round(rep.dist), time: Math.round(rep.time), pace: rep.pace, splits: rep.splits.map((s) => Math.round(s.pace)), onTime: rep.onTime, skipped: rep.skipped });
     R.cur = null;
   }
-  function judge(pace) {
-    const z = ZONES[R.plan.zone], tol = store.tol;
-    if (pace < z.target - tol) return "fast";
-    if (pace > z.target + tol) return "slow";
-    return "on";
+  function judgeTarget(target, pace) {
+    const tol = RS.tol;
+    return pace < target - tol ? "fast" : pace > target + tol ? "slow" : "on";
   }
-  function advanceRep(ph, d, t0, t1) {
-    const rep = R.cur;
+  function iOnDistance(d, t0, t1) {
+    R.totalDist += d;
+    const ph = R.phases[R.i], rep = R.cur;
+    if (ph.type !== "work" || !rep) return;
     if (d <= 0 || t1 <= rep.start) return;
     if (t0 < rep.start) { d *= (t1 - rep.start) / (t1 - t0); t0 = rep.start; }
     const d0 = rep.dist, d1 = d0 + d;
     const timeAt = (x) => t0 + (x - d0) / (d1 - d0) * (t1 - t0);
     while (d1 >= rep.nextMark && (ph.kind === "time" || rep.nextMark < ph.dist)) {
-      const tc = timeAt(rep.nextMark), pace = Math.round((tc - rep.markAt) / 1000 * (1000 / SPLIT)), v = judge(pace);
+      const tc = timeAt(rep.nextMark), pace = Math.round((tc - rep.markAt) / 1000 * (1000 / SPLIT)), v = judgeTarget(ZONES[R.plan.zone].target, pace);
       rep.splits.push({ m: rep.nextMark, pace: pace, v: v });
-      R.lastCall = { m: rep.nextMark, pace: pace, v: v };
-      if (now() - tc < 5000) say(PHRASE[v] + ". " + spokenPace(pace) + ".");
+      R.lastCall = { m: rep.nextMark, pace: pace, v: v, unit: "m" };
+      if (Date.now() - tc < 5000) say(PHRASE[v] + ". " + spokenPace(pace) + ".");
       rep.markAt = tc; rep.nextMark += SPLIT;
     }
     rep.dist = d1;
-    if (ph.kind === "dist" && d1 >= ph.dist) { rep.dist = ph.dist; finishPhase(timeAt(ph.dist)); }
+    if (ph.kind === "dist" && d1 >= ph.dist) { rep.dist = ph.dist; iFinishPhase(timeAt(ph.dist)); }
   }
 
-  function togglePause() {
+  // =====================================================================
+  // Run engine: easy, long and race runs (continuous, set by distance)
+  // =====================================================================
+  function cStart(plan) {
+    const t = Date.now();
+    R = Object.assign({}, plan, {
+      mode: "cont", startedAt: t, runStart: t, paused: false, pauseAt: 0, totalDist: 0, done: false,
+      segIdx: 0, segStartAt: t, kmNext: 1000, kmAt: t, kms: [], halfNext: null, halfAt: t, warned: {},
+      blocks: [], lastCall: null, lastKm: null, strideStart: null, fired: {}, note: null
+    });
+    cEnterSeg(0, t, false);
+    const first = R.segs[0];
+    let intro = "Start run. " + spokenDist(R.total) + ". ";
+    if (R.kind === "race") intro = "Race start. First kilometre at 4 oh 6 to 4 oh 8. Hold back.";
+    else if (R.segs.length === 1) intro += "Easy pace, 5 15 to 5 45.";
+    else intro += spokenDist(first.dist) + " easy to start.";
+    say(intro, true);
+    beep(1320, 0.3, 0.3);
+  }
+  function cEnterSeg(i, t, speak) {
+    R.segIdx = i; R.segStartAt = t;
+    const sg = R.segs[i];
+    R.halfNext = sg.half && sg.dist > 1000 ? sg.start + 500 : null; R.halfAt = t; R.lastCall = null;
+    if (!speak) return;
+    let txt;
+    if (sg.key === "easy") txt = "Easy now: " + spokenDist(sg.dist) + ".";
+    else if (sg.key === "steady") txt = "Steady now: " + spokenDist(sg.dist) + " at 4 40 to 4 50.";
+    else if (sg.key === "build") txt = "Start building: " + spokenDist(sg.dist) + ", from 4 45 down to 4 20.";
+    else if (sg.key === "race") txt = "Race pace now: " + spokenDist(sg.dist) + " at 4 oh 5.";
+    else if (sg.key === "hold") txt = "Lock in at 4 oh 4 to 4 oh 5. Run even.";
+    else if (sg.key === "push") txt = "Three to go. Push if you feel good.";
+    say(txt);
+  }
+  // Pace feedback for a split in a given segment: easy only warns when too fast
+  function cJudge(sg, pace) {
+    if (sg.mode === "fast") return pace < sg.lo ? "fast" : null;
+    if (sg.mode === "band") return pace < sg.lo ? "fast" : pace > sg.hi ? "slow" : "on";
+    return judgeTarget(sg.target, pace);
+  }
+  function cJudgeText(sg, v) {
+    if (!v) return "";
+    if (sg.mode === "fast") return " Too fast for easy. Ease off.";
+    return " " + PHRASE[v] + ".";
+  }
+  const segAt = (m) => R.segs.find((s) => m > s.start && m <= s.end) || R.segs[R.segs.length - 1];
+  function cOnDistance(d, t0, t1) {
+    if (d <= 0) return;
+    const d0 = R.totalDist, d1 = d0 + d;
+    const timeAt = (x) => t0 + (x - d0) / (d1 - d0) * (t1 - t0);
+    const fresh = (tc) => Date.now() - tc < 5000;
+    for (let guard = 0; guard < 50; guard++) {
+      const sg = R.segs[R.segIdx], nx = R.segs[R.segIdx + 1];
+      // next event by distance
+      const cands = [];
+      if (R.halfNext != null && R.halfNext < sg.end) cands.push(["half", R.halfNext]);
+      if (R.kmNext < R.total) cands.push(["km", R.kmNext]);
+      if (nx && nx.key !== "easy" && R.kind !== "race" && !R.warned[R.segIdx + 1] && nx.start - 200 > sg.start) cands.push(["warn", nx.start - 200]);
+      cands.push([nx ? "seg" : "finish", sg.end]);
+      cands.sort((a, b) => a[1] - b[1] || (a[0] === "km" ? -1 : 1));
+      const [type, pos] = cands[0];
+      if (pos > d1) break;
+      const tc = timeAt(pos);
+      if (type === "half") {
+        const pace = Math.round((tc - R.halfAt) / 1000 * 2), v = cJudge(sg, pace);
+        R.lastCall = { m: pos - sg.start, pace: pace, v: v || "on", unit: "m" };
+        if (fresh(tc)) say(PHRASE[v || "on"] + ". " + spokenPace(pace) + ".");
+        R.halfAt = tc; R.halfNext += 500;
+      } else if (type === "km") {
+        const k = Math.round(pos / 1000), split = (tc - R.kmAt) / 1000, avg = (tc - R.runStart) / 1000 / k;
+        // Judge a km only when the whole km sat in one block; race-pace blocks have their own 500 m calls
+        const ksg = segAt(pos), whole = segAt(pos - 999) === ksg, v = whole && !ksg.half ? cJudge(ksg, split) : null;
+        R.kms.push(Math.round(split));
+        R.lastKm = { k: k, split: split, v: v };
+        let txt = "Kilometre " + k + ". Split " + spokenPace(split) + ". Average " + spokenPace(avg) + "." + cJudgeText(ksg, v);
+        const left = R.total - pos;
+        if (pos >= 0.75 * R.total && left > 0) txt += " " + spokenDist(left) + " to go.";
+        if (fresh(tc)) say(txt);
+        R.kmAt = tc; R.kmNext += 1000;
+      } else if (type === "warn") {
+        R.warned[R.segIdx + 1] = true;
+        if (fresh(tc)) say(nx.label + " in 200 metres.");
+      } else if (type === "seg") {
+        if (sg.key !== "easy") {
+          const time = (tc - R.segStartAt) / 1000, pace = time / (sg.dist / 1000);
+          R.blocks.push({ key: sg.key, label: sg.label, dist: sg.dist, time: Math.round(time), pace: pace });
+          if (fresh(tc) && R.kind !== "race") say(sg.label + " done: " + spokenPace(pace) + " average.");
+        }
+        cEnterSeg(R.segIdx + 1, tc, fresh(tc));
+        if (ui.view === "run") renderRun();
+      } else {
+        // finish
+        if (sg.key !== "easy") {
+          const time = (tc - R.segStartAt) / 1000;
+          R.blocks.push({ key: sg.key, label: sg.label, dist: sg.dist, time: Math.round(time), pace: time / (sg.dist / 1000) });
+        }
+        const rem = pos - (R.kmNext - 1000);
+        if (rem >= 200) R.kms.push(Math.round((tc - R.kmAt) / 1000 / (rem / 1000)));
+        R.totalDist = pos;
+        const dur = (tc - R.runStart) / 1000;
+        if (fresh(tc)) {
+          say((R.kind === "race" ? "Finish. " : "Run complete. ") + spokenDist(pos) + " in " + spokenTime(dur) + ". Average " + spokenPace(dur / (pos / 1000)) + ".", false);
+          beep(660, 0.15, 0.25); setTimeout(() => beep(990, 0.4, 0.3), 180);
+        }
+        finishRun(tc, true);
+        return;
+      }
+    }
+    R.totalDist = d1;
+  }
+  function cTick(t) {
+    if (!R.strides) return;
+    const st = R.strides;
+    if (R.strideStart == null) {
+      if (R.totalDist >= st.from) { R.strideStart = t; }
+      else return;
+    }
+    const el = (t - R.strideStart) / 1000, cyc = st.on + st.off;
+    for (let k = 0; k < st.n; k++) {
+      const s0 = k * cyc;
+      if (el >= s0 && !R.fired["s" + k]) { R.fired["s" + k] = true; if (el - s0 < 4) { say("Stride " + (k + 1) + " of " + st.n + ". Go.", true); beep(1320, 0.2, 0.25); } }
+      if (el >= s0 + st.on && !R.fired["e" + k]) { R.fired["e" + k] = true; if (el - s0 - st.on < 4) say("Ease off.", true); }
+    }
+  }
+
+  // =====================================================================
+  // Run engine: shared
+  // =====================================================================
+  function runStart() {
+    unlockAudio();
+    const w = ui.rWeek || Math.min(planWeek(), 10), kind = ui.rKind || defaultRunKind();
+    startGps();
+    gps.trail = [];
+    if (kind === "intervals") iStart(w);
+    else if (kind === "easy") cStart(easyPlan(w, ui.rVar || defaultEasyVar()));
+    else cStart(longPlan(w));
+    requestWake();
+    ui.view = "run"; ui.confirmEnd = false;
+    setLock(true);
+    clearInterval(rTicker);
+    rTicker = setInterval(runTick, 250);
+    render();
+  }
+  function runTick() {
+    if (!R || R.done) return;
+    const t = Date.now();
+    if (!R.paused) {
+      if (R.mode === "int") iTick(t); else cTick(t);
+    }
+    if (R && !R.done) paintRun(t);
+  }
+  function runPause() {
     if (!R || R.done) return;
     unlockAudio();
     if (R.paused) {
-      const shift = now() - R.pauseAt;
-      R.phaseStart += shift;
-      if (R.cur) { R.cur.start += shift; R.cur.markAt += shift; }
-      R.paused = false;
-      gps.trail = [];
+      const shift = Date.now() - R.pauseAt;
+      if (R.mode === "int") { R.phaseStart += shift; if (R.cur) { R.cur.start += shift; R.cur.markAt += shift; } }
+      else { R.runStart += shift; R.segStartAt += shift; R.kmAt += shift; R.halfAt += shift; if (R.strideStart != null) R.strideStart += shift; }
+      R.paused = false; gps.trail = [];
       say("Resume.", true);
-    } else {
-      R.paused = true; R.pauseAt = now();
-      say("Paused.", true);
-    }
+    } else { R.paused = true; R.pauseAt = Date.now(); say("Paused.", true); }
     renderRun();
   }
-  function skipPhase() {
-    if (!R || R.done || R.paused) return;
+  function runSkip() {
+    if (!R || R.done || R.paused || R.mode !== "int") return;
     unlockAudio();
     if (R.cur) R.cur.skipped = true;
-    finishPhase(now());
+    iFinishPhase(Date.now());
   }
   function finishRun(endT, complete) {
-    if (R.cur) closeRep(endT);
+    if (R.mode === "int" && R.cur) iCloseRep(endT);
     R.done = true;
-    clearInterval(ticker); ticker = null;
+    clearInterval(rTicker); rTicker = null;
     stopGps(); releaseWake(); setLock(false);
-    const workReps = R.reps.filter((r) => r.dist > 0 || r.time > 0);
-    const rec = { date: new Date(R.startedAt).toISOString(), w: R.w, title: title(R.plan), zone: R.plan.zone,
-                  dur: Math.round((endT - R.startedAt) / 1000), dist: Math.round(R.totalDist), reps: workReps, complete: complete };
-    if (workReps.length) { store.history.push(rec); store.history = store.history.slice(-30); save(); }
-    ui.lastRun = rec; ui.view = "done"; ui.confirmEnd = false; ui.copyText = null;
+    let rec;
+    if (R.mode === "int") {
+      const reps = R.reps.filter((r) => r.dist > 0 || r.time > 0);
+      rec = { kind: "intervals", date: new Date(R.startedAt).toISOString(), w: R.w, title: R.title, zone: R.plan.zone,
+              dur: Math.round((endT - R.startedAt) / 1000), dist: Math.round(R.totalDist), reps: reps, complete: complete };
+      if (!reps.length) rec = null;
+    } else {
+      const dur = Math.round(((R.paused ? R.pauseAt : endT) - R.runStart) / 1000), dist = Math.round(R.totalDist);
+      rec = { kind: R.kind, v: R.v, date: new Date(R.startedAt).toISOString(), w: R.w, title: R.title, dur: dur, dist: dist,
+              avg: dist >= 100 ? dur / (dist / 1000) : null, kms: R.kms, blocks: R.blocks, complete: complete };
+      if (dist < 100) rec = null;
+    }
+    if (rec) { RS.history.push(rec); RS.history = RS.history.slice(-60); saveRuns(); }
+    ui.lastRun = rec; ui.view = rec ? "runDone" : "home"; ui.confirmEnd = false; ui.copyText = null;
+    R = null;
     render();
   }
-  function discardRun() {
-    if (R) { R.done = true; }
-    clearInterval(ticker); ticker = null;
-    stopGps(); releaseWake(); setLock(false);
-    if (synth) { try { synth.cancel(); } catch (e) {} }
-    R = null; ui.view = "start"; ui.confirmEnd = false;
+  function runDiscard() {
+    if (R) R.done = true;
+    clearInterval(rTicker); rTicker = null;
+    stopGps(); releaseWake(); setLock(false); hush();
+    R = null; ui.view = "home"; ui.confirmEnd = false;
     render();
   }
+  function defaultRunKind() {
+    const d = dayIndex();
+    if (d === 1) return "intervals";
+    if (d === 5 || d === 6) return "long";
+    return "easy";
+  }
+  const defaultEasyVar = () => (dayIndex() === 3 || dayIndex() === 4 ? "thu" : "mon");
 
-  // ---------- Touch lock ----------
+  // Touch lock
   let holdTimer = null;
-  function setLock(on) {
-    ui.locked = on;
-    $("lock").hidden = !on;
-    document.body.classList.toggle("locked", on);
-  }
+  function setLock(on) { ui.locked = on; $("lock").hidden = !on; document.body.classList.toggle("locked", on); }
   const unlockBtn = $("unlockBtn");
-  function holdStart(e) {
+  unlockBtn.addEventListener("pointerdown", (e) => {
     e.preventDefault();
     unlockBtn.classList.add("holding");
     clearTimeout(holdTimer);
     holdTimer = setTimeout(() => { unlockBtn.classList.remove("holding"); setLock(false); if (ui.view === "run") renderRun(); }, 800);
-  }
-  function holdEnd() { clearTimeout(holdTimer); unlockBtn.classList.remove("holding"); }
-  unlockBtn.addEventListener("pointerdown", holdStart);
-  ["pointerup", "pointerleave", "pointercancel"].forEach((ev) => unlockBtn.addEventListener(ev, holdEnd));
+  });
+  ["pointerup", "pointerleave", "pointercancel"].forEach((ev) => unlockBtn.addEventListener(ev, () => { clearTimeout(holdTimer); unlockBtn.classList.remove("holding"); }));
   unlockBtn.addEventListener("contextmenu", (e) => e.preventDefault());
-  unlockBtn.addEventListener("keydown", (e) => { if (e.key === "Enter" || e.key === " ") { e.preventDefault(); setLock(false); renderRun(); } });
+  unlockBtn.addEventListener("keydown", (e) => { if (e.key === "Enter" || e.key === " ") { e.preventDefault(); setLock(false); if (ui.view === "run") renderRun(); } });
 
-  // ---------- Rendering ----------
-  const app = $("app");
-  function render() {
-    if (ui.view === "run" && R) renderRun();
-    else if (ui.view === "done" && ui.lastRun) renderDone();
-    else { ui.view = "start"; renderStart(); }
+  // =====================================================================
+  // Strength engine
+  // =====================================================================
+  const setsFor = (pi, w) => (pi === 2 ? 2 : (isLight(w) || w === 10) ? 2 : 3);
+  function buildSets(type, w) {
+    const out = [];
+    SESSIONS[type].pairs.forEach((pair, pi) => {
+      const n = setsFor(pi, w);
+      for (let s = 1; s <= n; s++) pair.forEach((id, ei) => out.push({ ex: id, set: s, of: n, tag: PAIRS[pi] + (ei + 1), pos: ei }));
+    });
+    return out;
+  }
+  function loadLabel(ex) { return ex.load === "pair" ? "each hand" : ex.load === "single" ? "one dumbbell" : ""; }
+  function doseText(ex) {
+    if (ex.hold) return ex.hold + " s per " + ex.per;
+    return (ex.max ? ex.reps + "–" + ex.max : ex.reps) + (ex.per ? " per " + ex.per : " reps");
+  }
+  function weekNote(w, t) {
+    if (w === 10 && t === "B") return "Race week has no Strength B. Do Strength A on Monday, then keep your legs fresh.";
+    if (w === 10) return "Race week: 2 sets of everything, legs about 20% lighter.";
+    if (isLight(w)) return "Lighter week: same weights as last week, 2 sets of the A and B pairs.";
+    if (w > 10) return "Plan complete. Lifts keep going up 2 kg a week.";
+    return "Build week: each lift goes up 2 kg on last week.";
+  }
+  function lastRecord(id, skipRace) {
+    const ss = S.sessions;
+    for (let i = ss.length - 1; i >= 0; i--) {
+      const s = ss[i];
+      if (skipRace && s.week === 10) continue;
+      let hit = null;
+      s.sets.forEach((x) => { if (x.ex === id && typeof x.kg === "number") hit = x; });
+      if (hit) return { kg: hit.kg, week: s.week };
+    }
+    return null;
+  }
+  // +2 kg each new build week, held in lighter weeks, legs cut in race week
+  function suggest(id, w) {
+    const ex = EX[id];
+    if (ex.load === "none") return { none: true, kg: null };
+    const last = lastRecord(id, true) || lastRecord(id, false);
+    if (!last) return { first: true, kg: null };
+    let kg = last.kg, why;
+    if (w === 10) {
+      if (ex.legs) { kg = Math.max(0, Math.floor(last.kg * 0.8 / STEP) * STEP); why = "Race week: lighter legs"; }
+      else why = "Race week: same weight";
+    } else if (last.kg === 0) { kg = 0; why = "Bodyweight last time; add weight with +"; }
+    else if (isLight(w)) why = "Lighter week: same weight";
+    else if (w > last.week) { kg = last.kg + STEP; why = "+2 kg on last week"; }
+    else why = "Same as last time";
+    return { kg: kg, delta: kg - last.kg, why: why, lastKg: last.kg, lastWeek: last.week };
+  }
+  function defaultType(w) {
+    if (w === 10) return "A";
+    const d = dayIndex();
+    if (d === 0) return "A";
+    if (d === 3) return "B";
+    const ss = S.sessions;
+    if (!ss.length) return "A";
+    return ss[ss.length - 1].type === "A" ? "B" : "A";
+  }
+  function setPlan(id) {
+    const ex = EX[id], t = ANIM[ex.anim].tempo, tempo = t[0] + t[1], sides = ex.per ? 2 : 1;
+    if (ex.hold) return { sides: sides, sideDur: ex.hold, gap: GAP, timed: true, tempo: tempo };
+    const max = ex.max || ex.reps;
+    return { sides: sides, sideDur: max * tempo, gap: GAP, timed: false, tempo: tempo, turn: t[0], target: ex.reps, max: max };
+  }
+  const setTotal = (p) => p.sides * p.sideDur + (p.sides - 1) * p.gap;
+  function setPos(p, e) {
+    for (let s = 0; s < p.sides; s++) {
+      const s0 = s * (p.sideDur + p.gap);
+      if (e < s0 + p.sideDur) return { side: s, gap: false, local: Math.max(0, e - s0) };
+      if (s < p.sides - 1 && e < s0 + p.sideDur + p.gap) return { side: s, gap: true, local: e - s0 - p.sideDur };
+    }
+    return { side: p.sides - 1, done: true, local: p.sideDur };
+  }
+  function weightSpoken(id) {
+    const ex = EX[id], kg = C && C.weights[id];
+    if (ex.load === "none" || kg === 0) return "Bodyweight.";
+    if (kg == null) return "Choose your weight.";
+    return fmtKg(kg) + " kilos" + (ex.load === "pair" ? " each hand." : ".");
+  }
+  function weightText(id) {
+    const ex = EX[id], kg = C && C.weights[id];
+    if (ex.load === "none" || kg === 0) return "Bodyweight";
+    if (kg == null) return "Weight to choose";
+    return fmtKg(kg) + " kg " + loadLabel(ex);
   }
 
-  function renderStart() {
-    document.body.setAttribute("data-phase", "idle");
-    const auto = currentWeek(), w = ui.week || auto, p = planFor(w), z = ZONES[p.zone], tol = store.tol;
-    const before = new Date() < PLAN_START;
-    const opts = PLAN.map((q) => {
-      const tag = q.w === auto ? (before ? " (next)" : " (this week)") : "";
-      return '<option value="' + q.w + '"' + (q.w === w ? " selected" : "") + ">Week " + q.w + " · " + esc(fmtDay(tuesday(q.w))) + tag + "</option>";
-    }).join("");
-    const repHow = p.kind === "time" ? "at " + fmtPace(z.target) + "/km" : fmtPace(z.target) + "/km";
-    const s = gpsSummary();
-    let h = '<section class="view start" aria-labelledby="startTitle">';
-    h += '<header><p class="label eyebrow">Sub-41 plan · Tuesday quality run</p><h1 class="title" id="startTitle">Intervals</h1></header>';
-    h += '<div class="field"><label class="label" for="weekSel">Plan week</label><div class="select-wrap"><select id="weekSel">' + opts + "</select></div></div>";
-    h += '<div class="session"><h2 class="session-name">' + esc(title(p)) + "</h2>" +
-      '<p class="session-sub">At ' + esc(z.name) + " (" + z.band + "/km), " + esc(fmtRest(p.rest)) + " jog between. Pace call every 250 m: on pace means " +
-      fmtPace(z.target - tol) + "–" + fmtPace(z.target + tol) + "/km.</p>";
-    h += '<ol class="steps">' +
-      '<li><span class="what">Warm-up<span>Easy, with 4 × 20 s strides from 8 min</span></span><span class="how">12 min</span></li>' +
-      '<li><span class="what">' + p.reps + " intervals of " + esc(fmtWork(p)) + "<span>" +
-        (p.kind === "dist" ? "Each ends on GPS distance" : "Each ends on time") + "</span></span><span class=\"how\">" + repHow + "</span></li>" +
-      '<li><span class="what">Rest<span>Jog between intervals</span></span><span class="how">' + esc(fmtRest(p.rest)) + "</span></li>" +
-      '<li><span class="what">Warm-down<span>Easy</span></span><span class="how">8 min</span></li></ol>';
-    h += '<p class="total">About ' + Math.round(estSeconds(p) / 60) + " minutes in total.</p></div>";
+  let C = S.current, SETS = C ? buildSets(C.type, C.week) : [], sFired = {}, sTicker = null;
+  function sStart() {
+    unlockAudio();
+    const w = ui.sWeek || planWeek(), t = ui.sType || defaultType(w);
+    const weights = {}, sug = {};
+    SESSIONS[t].pairs.forEach((p) => p.forEach((id) => { const s = suggest(id, w); sug[id] = s; weights[id] = s.kg; }));
+    C = S.current = { id: "s" + Date.now().toString(36), type: t, week: w, startedAt: Date.now(), k: 0, phase: "warmup",
+                      t0: Date.now(), sets: [], weights: weights, sug: sug, paused: false, leadType: null, leadDur: 0 };
+    SETS = buildSets(t, w);
+    saveStrength();
+    say(SESSIONS[t].name + ". Warm up first.");
+    sEnter();
+  }
+  function sEnter() {
+    ui.view = "lift"; ui.confirmEnd = false;
+    requestWake();
+    clearInterval(sTicker);
+    sTicker = setInterval(sTick, 100);
+    render();
+  }
+  function sResume() {
+    unlockAudio();
+    if (!C) return;
+    SETS = buildSets(C.type, C.week);
+    if (C.phase !== "warmup") { C.phase = "hold"; C.paused = false; }
+    saveStrength();
+    say("Welcome back.");
+    sEnter();
+  }
+  function leadIntro(k, type) {
+    const st = SETS[k], ex = EX[st.ex];
+    const what = ex.say + (st.set > 1 ? ", set " + st.set : "") + ". " + weightSpoken(st.ex);
+    if (type === "ready") return "Get ready. First up: " + what;
+    if (type === "change") return "Next: " + what;
+    if (type === "rest") return "Rest. Next: " + what;
+    return "";
+  }
+  function sLead(k, type, prefix) {
+    C.k = k; C.phase = "lead"; C.leadType = type; C.paused = false;
+    C.leadDur = type === "ready" ? READY : type === "change" ? CHANGE : type === "go" ? GO : S.rest;
+    C.t0 = Date.now(); sFired = {};
+    saveStrength();
+    say(((prefix || "") + " " + leadIntro(k, type)).trim());
+    render();
+  }
+  const needsWeight = (k) => { const id = SETS[k].ex; return EX[id].load !== "none" && C.weights[id] == null; };
+  function sSet(k) {
+    C.k = k; C.phase = "set"; C.t0 = Date.now(); C.paused = false; sFired = {};
+    saveStrength();
+    render();
+    sTick();
+  }
+  const switchText = (ex) => SWITCH[ex.per] || "Switch sides.";
+  function sTick() {
+    if (!C || ui.view !== "lift" || C.paused) { sPaintClock(); return; }
+    const t = Date.now(), e = (t - C.t0) / 1000;
+    const at = (key, time, fn) => { if (e >= time && !sFired[key]) { sFired[key] = true; if (e - time < 2.5) fn(); } };
+    if (C.phase === "lead") {
+      const D = C.leadDur, ready = !needsWeight(C.k);
+      if (D >= 20) at("t10", D - 10, () => { if (ready) say("10 seconds."); });
+      [3, 2, 1].forEach((n) => at("c" + n, D - n, () => { if (ready) { say(String(n)); beep(880, 0.12, 0.25); } }));
+      if (e >= D) {
+        if (needsWeight(C.k)) { C.phase = "hold"; saveStrength(); say("Enter your weight to start."); render(); }
+        else sSet(C.k);
+        return;
+      }
+      sPaintLead(e);
+    } else if (C.phase === "set") {
+      const st = SETS[C.k], ex = EX[st.ex], p = setPlan(st.ex), total = setTotal(p);
+      at("go0", 0, () => { say("Go."); beep(1320, 0.2, 0.25); });
+      for (let s = 0; s < p.sides; s++) {
+        const s0 = s * (p.sideDur + p.gap), last = s === p.sides - 1;
+        if (s > 0) at("go" + s, s0, () => { say("Go."); beep(1320, 0.2, 0.25); });
+        if (p.timed) {
+          if (p.sideDur >= 20) at("t10_" + s, s0 + p.sideDur - 10, () => say("10 seconds."));
+          [3, 2, 1].forEach((n) => at("c" + s + n, s0 + p.sideDur - n, () => { say(String(n)); beep(880, 0.1, 0.2); }));
+          if (!last) at("sw" + s, s0 + p.sideDur, () => say(switchText(ex)));
+        } else {
+          for (let r = 1; r <= p.max; r++) {
+            at("tk" + s + "_" + r, s0 + (r - 1) * p.tempo + p.turn, () => beep(620, 0.05, 0.12));
+            if (last && r === p.max) continue; // spoken with the end of the set
+            at("r" + s + "_" + r, s0 + r * p.tempo, () => {
+              let txt = r + ".";
+              if (r === p.target && p.max > p.target) txt += " " + (p.max - p.target) + " more if you've got them.";
+              if (r === p.max && !last) txt += " " + switchText(ex);
+              say(txt);
+            });
+          }
+        }
+      }
+      if (e >= total) {
+        const late = e - total > 2.5;
+        sFinishSet(p.timed ? null : p.max, late ? "" : (p.timed ? "Done." : p.max + "."), late);
+        return;
+      }
+      sPaintSet(e, p);
+    }
+    sPaintClock();
+  }
+  function sFinishSet(reps, prefix, late) {
+    const st = SETS[C.k], ex = EX[st.ex];
+    C.sets.push({ ex: st.ex, set: st.set, kg: ex.load === "none" ? null : C.weights[st.ex], reps: reps });
+    if (C.k >= SETS.length - 1) { sFinish(true, prefix); return; }
+    if (late) hush();
+    sLead(C.k + 1, st.pos === 0 ? "change" : "rest", late ? "" : prefix);
+  }
+  function sStopSet() {
+    if (!C || C.phase !== "set") return;
+    hush();
+    const st = SETS[C.k], p = setPlan(st.ex), pos = setPos(p, (Date.now() - C.t0) / 1000);
+    let reps = null;
+    if (!p.timed) reps = pos.gap ? p.max : Math.min(p.max, Math.floor(pos.local / p.tempo));
+    sFinishSet(reps, "", false);
+  }
+  function sPause() {
+    if (!C) return;
+    unlockAudio();
+    if (C.paused) { C.t0 += Date.now() - C.pausedAt; C.paused = false; saveStrength(); say("Resume."); }
+    else { C.paused = true; C.pausedAt = Date.now(); saveStrength(); hush(); say("Paused."); }
+    render();
+  }
+  function sSkipLead() {
+    if (!C || C.phase !== "lead") return;
+    hush();
+    if (needsWeight(C.k)) { C.phase = "hold"; saveStrength(); render(); return; }
+    sSet(C.k);
+  }
+  function sFinish(complete, prefix) {
+    const rec = { id: C.id, type: C.type, week: C.week, date: new Date(C.startedAt).toISOString(),
+                  durationSec: Math.round((Date.now() - C.startedAt) / 1000), sets: C.sets, complete: !!complete };
+    if (rec.sets.length) { S.sessions.push(rec); if (S.sessions.length > 300) S.sessions = S.sessions.slice(-300); }
+    S.current = null; C = null; saveStrength();
+    clearInterval(sTicker); sTicker = null; releaseWake();
+    ui.lastLift = rec.sets.length ? rec : null; ui.view = rec.sets.length ? "liftDone" : "home"; ui.confirmEnd = false; ui.copyText = null;
+    if (complete) { say(((prefix || "") + " Session complete. Nice work.").trim()); beep(660, 0.15, 0.25); setTimeout(() => beep(990, 0.4, 0.3), 180); }
+    render();
+  }
+  function sDiscard() {
+    hush();
+    S.current = null; C = null; saveStrength();
+    clearInterval(sTicker); sTicker = null; releaseWake();
+    ui.view = "home"; ui.confirmEnd = false;
+    render();
+  }
 
-    h += '<div class="panel"><div class="panel-row"><div><p class="status" id="gpsStatus"><span class="dot ' + s.cls + '"></span>' + esc(s.text) +
-      '</p><p class="status-note" id="gpsNote">' + esc(s.note) + '</p></div><button type="button" class="btn small" id="gpsBtn" data-act="gps"' +
-      (gps.state !== "off" && gps.state !== "denied" ? " hidden" : "") + ">Check GPS</button></div></div>";
-    h += '<div class="panel"><div class="panel-row"><div><p class="status">Voice cues</p><p class="status-note">Plays through your headphones or the phone speaker. Test the volume before you go.</p></div>' +
-      '<button type="button" class="btn small" data-act="test-voice">Test voice</button></div></div>';
-    h += '<div class="field"><span class="label" id="tolLbl">On-pace window</span><div class="seg" role="group" aria-labelledby="tolLbl">' +
-      [3, 5, 8].map((v) => '<button type="button" data-act="tol" data-tol="' + v + '" aria-pressed="' + (tol === v) + '">±' + v + " s/km</button>").join("") + "</div></div>";
-    h += historyHtml();
-    h += '<p class="fine">Keep this page open with the screen on for the whole run. If the screen locks, the timer, voice and GPS stop.</p>';
-    h += '<div class="sticky-bar"><button type="button" class="btn primary big" data-act="start">Start week ' + w + "</button></div></section>";
+  // =====================================================================
+  // Exercise figures: side-view figure; poses set hip, torso angle, ankle and hand targets; knees and elbows are solved
+  // =====================================================================
+  const L = { torso: 52, neck: 8, head: 10, ua: 28, fa: 26, th: 38, sh: 36, ft: 12 };
+  const sh = (x, y, b) => ({ to: "sh", p: [x, y], b: b == null ? 1 : b });
+  const hp = (x, y, b) => ({ to: "hip", p: [x, y], b: b == null ? 1 : b });
+  const ab = (x, y, b) => ({ to: "abs", p: [x, y], b: b == null ? 1 : b });
+  const BENCH = (x, y, w) => [["r", x, y, w, 8], ["l", x + 7, y + 8, x + 7, 158, 6], ["l", x + w - 7, y + 8, x + w - 7, 158, 6]];
+  const ANIM = {
+    split: { tempo: [2, 1], bench: BENCH(26, 126, 50), db: ["n", "f"], p: [
+      { hip: [112, 90], torso: -86, n: [148, 154, 8], f: [66, 122, 175], an: sh(3, 50), af: sh(1, 50) },
+      { hip: [104, 120], torso: -80, n: [148, 154, 8], f: [66, 122, 175], an: sh(3, 50), af: sh(1, 50) }] },
+    row1: { tempo: [1, 2], bench: BENCH(160, 118, 58), db: ["n"], p: [
+      { hip: [100, 92], torso: -25, n: [114, 154, 5], f: [86, 154, 5], an: sh(0, 50), af: ab(172, 116) },
+      { hip: [100, 92], torso: -25, n: [114, 154, 5], f: [86, 154, 5], an: sh(-24, 16), af: ab(172, 116) }] },
+    rdl: { tempo: [2, 1], db: ["n", "f"], p: [
+      { hip: [120, 84], torso: -88, n: [124, 154, 8], f: [119, 154, 8], an: sh(3, 50), af: sh(1, 50) },
+      { hip: [104, 90], torso: -28, n: [124, 154, 8], f: [119, 154, 8], an: sh(0, 50), af: sh(-2, 50) }] },
+    bench: { tempo: [2, 1], bench: BENCH(58, 111, 112), db: ["n", "f"], p: [
+      { hip: [150, 104], torso: 180, n: [184, 154, 5], f: [178, 154, 5], an: sh(2, -50), af: sh(0, -50) },
+      { hip: [150, 104], torso: 180, n: [184, 154, 5], f: [178, 154, 5], an: sh(4, -18), af: sh(2, -18) }] },
+    plank: { tempo: [1, 2], db: [], p: [
+      { hip: [132, 140], torso: -166.5, n: [198, 150, 10], f: [200, 154, 10], an: hp(-4, -14, -1), af: ab(106, 156) },
+      { hip: [132, 140], torso: -166.5, n: [194, 116, -10], f: [200, 154, 10], an: hp(-4, -14, -1), af: ab(106, 156) }] },
+    calf: { tempo: [1, 2], db: ["n"], p: [
+      { hip: [120, 84], torso: -90, n: [122, 154, 10], f: [104, 128, 150], an: sh(3, 50), af: sh(1, 50) },
+      { hip: [120, 76], torso: -90, n: [124, 146, 40], f: [104, 120, 150], an: sh(3, 50), af: sh(1, 50) }] },
+    step: { tempo: [1, 2], bench: BENCH(130, 128, 72), db: ["n", "f"], p: [
+      { hip: [118, 88], torso: -84, n: [150, 124, 5], f: [112, 154, 5], an: sh(4, 50), af: sh(2, 50) },
+      { hip: [148, 56], torso: -86, n: [150, 124, 5], f: [138, 116, 20], an: sh(4, 50), af: sh(2, 50) }] },
+    incline: { tempo: [2, 1], bench: [["r", 112, 118, 52, 8], ["l", 138, 126, 138, 158, 6], ["l", 125, 120, 85, 80, 9], ["l", 105, 100, 105, 158, 6]], db: ["n", "f"], p: [
+      { hip: [130, 112], torso: -135, n: [178, 154, 5], f: [172, 154, 5], an: sh(16, -48), af: sh(14, -48) },
+      { hip: [130, 112], torso: -135, n: [178, 154, 5], f: [172, 154, 5], an: sh(16, -8), af: sh(14, -8) }] },
+    slrdl: { tempo: [2, 1], db: ["f"], p: [
+      { hip: [120, 84], torso: -88, n: [124, 154, 8], f: [114, 148, 20], an: sh(2, 50), af: sh(0, 50) },
+      { hip: [110, 90], torso: -6, n: [124, 154, 8], f: [40, 98, 100], an: sh(0, 50), af: sh(-2, 50) }] },
+    row2: { tempo: [1, 2], bench: [["l", 112, 110, 145, 87, 9], ["l", 131, 97, 131, 158, 6], ["l", 112, 158, 150, 158, 6]], db: ["n", "f"], p: [
+      { hip: [110, 100], torso: -35, n: [72, 154, 0], f: [78, 154, 0], an: sh(0, 50), af: sh(2, 50) },
+      { hip: [110, 100], torso: -35, n: [72, 154, 0], f: [78, 154, 0], an: sh(-22, 14), af: sh(-20, 14) }] },
+    thrust: { tempo: [1, 2], bench: BENCH(26, 120, 64), db: ["n"], p: [
+      { hip: [130, 148], torso: -144.5, n: [164, 154, 5], f: [158, 154, 5], an: hp(-6, -12, -1), af: hp(-8, -12, -1) },
+      { hip: [140, 118], torso: 180, n: [164, 154, 5], f: [158, 154, 5], an: hp(-6, -12, -1), af: hp(-8, -12, -1) }] },
+    march: { tempo: [1, 1], db: ["n"], p: [
+      { hip: [120, 84], torso: -90, n: [136, 120, 10], f: [118, 154, 8], an: sh(3, 50), af: sh(6, 46) },
+      { hip: [120, 84], torso: -90, n: [122, 154, 8], f: [136, 120, 10], an: sh(3, 50), af: sh(-4, 48) }] }
+  };
+  const rad = (a) => a * Math.PI / 180;
+  const dirv = (a) => [Math.cos(rad(a)), Math.sin(rad(a))];
+  const lerp = (a, b, k) => a + (b - a) * k;
+  const lerpAng = (a, b, k) => a + ((((b - a) % 360) + 540) % 360 - 180) * k;
+  const ease = (x) => x * x * (3 - 2 * x);
+  function ik(A, T, l1, l2, bend) {
+    const vx = T[0] - A[0], vy = T[1] - A[1], d0 = Math.hypot(vx, vy) || 0.001;
+    const d = Math.min(l1 + l2 - 0.5, Math.max(Math.abs(l1 - l2) + 0.5, d0));
+    const ux = vx / d0, uy = vy / d0;
+    const a = (l1 * l1 - l2 * l2 + d * d) / (2 * d), h = Math.sqrt(Math.max(0, l1 * l1 - a * a));
+    const px = -uy * bend, py = ux * bend;
+    return [[A[0] + ux * a + px * h, A[1] + uy * a + py * h], [A[0] + ux * d, A[1] + uy * d]];
+  }
+  const f1 = (n) => Math.round(n * 10) / 10;
+  const pts = (arr) => arr.map((p) => f1(p[0]) + "," + f1(p[1])).join(" ");
+  function figureSVG(key, k, mirror) {
+    const A = ANIM[key], P0 = A.p[0], P1 = A.p[1];
+    const hip = [lerp(P0.hip[0], P1.hip[0], k), lerp(P0.hip[1], P1.hip[1], k)];
+    const td = dirv(lerpAng(P0.torso, P1.torso, k));
+    const shd = [hip[0] + td[0] * L.torso, hip[1] + td[1] * L.torso];
+    const neck = [shd[0] + td[0] * L.neck, shd[1] + td[1] * L.neck];
+    const head = [shd[0] + td[0] * (L.neck + L.head), shd[1] + td[1] * (L.neck + L.head)];
+    const leg = (s) => {
+      const a = P0[s], b = P1[s], T = [lerp(a[0], b[0], k), lerp(a[1], b[1], k)], fd = dirv(lerpAng(a[2], b[2], k));
+      const [knee, ank] = ik(hip, T, L.th, L.sh, -1);
+      return [hip, knee, ank, [ank[0] + fd[0] * L.ft, ank[1] + fd[1] * L.ft]];
+    };
+    const arm = (s) => {
+      const a = P0[s], b = P1[s], base = a.to === "sh" ? shd : a.to === "hip" ? hip : [0, 0];
+      const T = [base[0] + lerp(a.p[0], b.p[0], k), base[1] + lerp(a.p[1], b.p[1], k)];
+      const [elb, hand] = ik(shd, T, L.ua, L.fa, a.b);
+      return [shd, elb, hand];
+    };
+    const ln = arm("an"), lf = arm("af"), gn = leg("n"), gf = leg("f");
+    let s = '<line x1="2" y1="158" x2="238" y2="158" stroke="currentColor" stroke-opacity="0.3" stroke-width="2"/>';
+    (A.bench || []).forEach((b) => {
+      if (b[0] === "r") s += '<rect x="' + b[1] + '" y="' + b[2] + '" width="' + b[3] + '" height="' + b[4] + '" rx="3" fill="currentColor" fill-opacity="0.28"/>';
+      else s += '<line x1="' + b[1] + '" y1="' + b[2] + '" x2="' + b[3] + '" y2="' + b[4] + '" stroke="currentColor" stroke-opacity="0.28" stroke-width="' + b[5] + '" stroke-linecap="round"/>';
+    });
+    const limb = (p, w) => '<polyline points="' + pts(p) + '" fill="none" stroke="currentColor" stroke-width="' + w + '" stroke-linecap="round" stroke-linejoin="round"/>';
+    s += '<g opacity="0.42">' + limb(gf, 9) + limb(lf, 8) + "</g>";
+    s += limb([hip, shd], 14) + limb([shd, neck], 7);
+    s += '<circle cx="' + f1(head[0]) + '" cy="' + f1(head[1]) + '" r="' + L.head + '" fill="currentColor"/>';
+    s += limb(gn, 9) + limb(ln, 8);
+    (A.db || []).forEach((w) => {
+      const h = (w === "n" ? ln : lf)[2];
+      s += '<circle cx="' + f1(h[0]) + '" cy="' + f1(h[1]) + '" r="7" fill="currentColor"' + (w === "f" ? ' fill-opacity="0.7"' : "") + "/>" +
+        '<circle cx="' + f1(h[0]) + '" cy="' + f1(h[1]) + '" r="2.6" fill="var(--bg)"/>';
+    });
+    if (mirror) s = '<g transform="translate(240 0) scale(-1 1)">' + s + "</g>";
+    return '<svg viewBox="0 -34 240 198" role="img" aria-label="Exercise demonstration" preserveAspectRatio="xMidYMid meet">' + s + "</svg>";
+  }
+  function blendAt(key, sec) {
+    const t = ANIM[key].tempo, c = t[0] + t[1], r = ((sec % c) + c) % c;
+    return r < t[0] ? ease(r / t[0]) : 1 - ease((r - t[0]) / t[1]);
+  }
+  let reduceMotion = false;
+  try { reduceMotion = window.matchMedia("(prefers-reduced-motion: reduce)").matches; } catch (e) {}
+  function animate() {
+    const figs = document.querySelectorAll("[data-fig]"), now = performance.now() / 1000;
+    figs.forEach((el) => {
+      const key = el.getAttribute("data-fig"), mode = el.getAttribute("data-mode");
+      let k, mirror = false;
+      if (mode === "set" && C && C.phase === "set") {
+        const p = setPlan(SETS[C.k].ex), e = Math.max(0, ((C.paused ? C.pausedAt : Date.now()) - C.t0) / 1000), pos = setPos(p, e);
+        mirror = pos.side === 1 || (pos.gap && pos.side === 0);
+        k = pos.gap || pos.done ? 0 : blendAt(key, pos.local);
+      } else k = reduceMotion ? 1 : blendAt(key, now);
+      const sig = key + (mirror ? "m" : "") + Math.round(k * 200);
+      if (el._sig !== sig) { el._sig = sig; el.innerHTML = figureSVG(key, k, mirror); }
+    });
+    requestAnimationFrame(animate);
+  }
+
+  // =====================================================================
+  // Rendering
+  // =====================================================================
+  const app = $("app");
+  const ui = { view: "home", rKind: null, rWeek: null, rVar: null, sType: null, sWeek: null, preview: null, confirmEnd: false, locked: false,
+               lastRun: null, lastLift: null, copyText: null };
+  function render() {
+    if (location.hash === "#figures") return renderGallery();
+    document.body.classList.remove("is-paused");
+    switch (ui.view) {
+      case "runSetup": return renderRunSetup();
+      case "run": return R ? renderRun() : (ui.view = "home", renderHome());
+      case "runDone": return ui.lastRun ? renderRunDone() : (ui.view = "home", renderHome());
+      case "liftSetup": return renderLiftSetup();
+      case "lift": return C ? renderLift() : (ui.view = "home", renderHome());
+      case "liftDone": return ui.lastLift ? renderLiftDone() : (ui.view = "home", renderHome());
+      default: ui.view = "home"; return renderHome();
+    }
+  }
+  const backLink = () => '<button type="button" class="link-btn back" data-act="home">‹ Home</button>';
+
+  // ----- Home -----
+  function itemSub(it, w) {
+    if (it.t === "strength") return "About 25 minutes, voice-coached";
+    if (it.t === "easy") { const p = easyPlan(w, it.v); return "About " + Math.round(contEst(p) / 60) + " min at 5:15–5:45/km"; }
+    if (it.t === "intervals") return "About " + Math.round(iEst(intervalPlan(w)) / 60) + " min with warm-up and warm-down";
+    if (it.t === "long") { const p = longPlan(w); return p.kind === "race" ? "Goal 40:45, 4:05/km" : "About " + Math.round(contEst(p) / 60) + " min"; }
+    return "";
+  }
+  function renderHome() {
+    document.body.setAttribute("data-phase", "idle");
+    const pre = beforePlan(), w = Math.min(planWeek(), 10), di = pre ? 0 : dayIndex(), sched = weekSchedule(w);
+    const todayItems = pre ? [] : sched[di];
+    let h = '<section class="view scroll" aria-labelledby="homeTitle">';
+    h += '<header><p class="label">Sub-41 plan · ' + (pre ? "Week 1 starts Mon 16 Nov" : shortWeek(planWeek()) + (isLight(w) ? " · lighter" : w === 10 ? " · race week" : "")) + "</p>" +
+      '<h1 class="title" id="homeTitle">' + (pre ? "Ready" : DAYS[di]) + "</h1></header>";
+    if (C) {
+      h += '<div class="notice"><p class="notice-title">Unfinished: ' + esc(SESSIONS[C.type].name) + '</p><p class="soft">' + C.sets.length + " of " + buildSets(C.type, C.week).length +
+        ' sets done.</p><div class="notice-actions"><button type="button" class="btn primary" data-act="lift-resume">Resume</button>' +
+        (C.sets.length ? '<button type="button" class="btn" data-act="lift-close">Save and close</button>' : '<button type="button" class="btn" data-act="lift-discard">Discard</button>') + "</div></div>";
+    }
+    h += '<div class="today">';
+    if (pre) h += '<div class="today-item"><div><p class="what">Your plan starts on Monday</p><p class="sub">Try the tools now: check GPS and voice, and look at the strength exercises.</p></div></div>';
+    todayItems.forEach((it) => {
+      const done = isDone(it, w);
+      let btn = "";
+      if (it.t === "strength") btn = '<button type="button" class="btn small primary" data-act="go-lift" data-s="' + it.s + '">Start</button>';
+      else if (it.t !== "note") btn = '<button type="button" class="btn small primary" data-act="go-run" data-k="' + it.t + '"' + (it.v ? ' data-v="' + it.v + '"' : "") + ">Start</button>";
+      h += '<div class="today-item"><div><p class="what">' + esc(it.label) + '</p><p class="sub">' + esc(itemSub(it, w) || (it.label === "Padel" ? "Counts as a hard session" : "Recovery")) + "</p></div>" +
+        (done ? '<span class="done-tag">Done ✓</span>' : btn) + "</div>";
+    });
+    h += "</div>";
+    h += '<div class="choices"><button type="button" class="choice" data-act="go-run"><span class="big-word">Run</span><span class="sub">Easy, intervals, long run</span></button>' +
+      '<button type="button" class="choice" data-act="go-lift"><span class="big-word">Strength</span><span class="sub">Session A or B</span></button></div>';
+    h += '<section aria-labelledby="weekTitle"><h2 class="section-title" id="weekTitle">' + (pre ? "Week 1" : "This week") + '</h2><ul class="week-list">';
+    sched.forEach((items, d) => {
+      const today = !pre && d === di;
+      h += '<li class="' + (today ? "is-today" : "") + '"><span class="d">' + DAYS3[d] + '</span><span class="w">' +
+        items.map((it) => '<span class="' + (it.t === "note" ? "muted" : "") + '">' + esc(it.label) + (isDone(it, w) ? ' <span class="tick">✓</span>' : "") + "</span>").join("") +
+        '</span><span class="soft">' + esc(fmtDay(dateOf(w, d)).replace(/^\w+ /, "")) + "</span></li>";
+    });
+    h += "</ul></section>";
+    h += '<p class="fine">Use this on your iPhone for every workout so your runs and weights stay in one place. Keep the screen on during workouts.</p>';
+    h += "</section>";
     app.innerHTML = h;
   }
 
-  function avgPace(reps) {
-    let t = 0, d = 0;
-    reps.forEach((r) => { if (r.dist >= 50) { t += r.time; d += r.dist; } });
-    return d ? t / (d / 1000) : null;
+  // ----- Run setup -----
+  function runPlanFor() {
+    const w = ui.rWeek || Math.min(planWeek(), 10), kind = ui.rKind || defaultRunKind();
+    if (kind === "intervals") return { kind: kind, w: w, p: intervalPlan(w) };
+    if (kind === "easy") return { kind: kind, w: w, p: easyPlan(w, ui.rVar || defaultEasyVar()) };
+    return { kind: kind, w: w, p: longPlan(w) };
   }
-  function historyHtml() {
-    const hs = store.history.slice().reverse().slice(0, 8);
-    let h = '<section class="history" aria-labelledby="histTitle"><h2 id="histTitle">Recent runs</h2>';
-    if (!hs.length) return h + '<p class="soft">Your interval sessions show up here, with each rep\'s pace.</p></section>';
+  function contSteps(p) {
+    let h = '<ol class="steps">';
+    p.segs.forEach((s) => {
+      h += '<li><span class="what">' + esc(s.label) + "<span>" + esc(s.desc) + '</span></span><span class="how">' + fmtKm(s.dist) + "</span></li>";
+    });
+    if (p.strides) h += '<li><span class="what">Strides<span>' + p.strides.n + " × 20 s fast and relaxed, 40 s easy between</span></span><span class=\"how\">from " + fmtKm(p.strides.from) + "</span></li>";
+    return h + "</ol>";
+  }
+  function renderRunSetup() {
+    document.body.setAttribute("data-phase", "idle");
+    const { kind, w, p } = runPlanFor(), tol = RS.tol, gs = gpsSummary(), wk = Math.min(planWeek(), 10), pre = beforePlan();
+    let opts = "";
+    for (let i = 1; i <= 10; i++) opts += '<option value="' + i + '"' + (i === w ? " selected" : "") + ">Week " + i + (isLight(i) ? " · lighter" : i === 10 ? " · race" : "") + (i === wk && !pre ? " (now)" : "") + "</option>";
+    let h = '<section class="view scroll" aria-labelledby="runTitle">' + backLink();
+    h += '<header><p class="label">Sub-41 plan · Week ' + w + '</p><h1 class="title" id="runTitle">Run</h1></header>';
+    h += '<div class="seg" role="group" aria-label="Run type">' +
+      [["easy", "Easy"], ["intervals", "Intervals"], ["long", w === 10 ? "Race" : "Long"]].map(([k, l]) => '<button type="button" data-act="rkind" data-k="' + k + '" aria-pressed="' + (kind === k) + '">' + l + "</button>").join("") + "</div>";
+    h += '<div class="fields"><div class="field"><label class="label" for="rWeekSel">Plan week</label><div class="select-wrap"><select id="rWeekSel">' + opts + "</select></div></div>";
+    if (kind === "easy") {
+      const v = ui.rVar || defaultEasyVar();
+      h += '<div class="field"><span class="label" id="varLbl">Day</span><div class="seg" role="group" aria-labelledby="varLbl">' +
+        '<button type="button" data-act="rvar" data-v="mon" aria-pressed="' + (v === "mon") + '">Mon</button><button type="button" data-act="rvar" data-v="thu" aria-pressed="' + (v === "thu") + '">Thu</button></div></div>';
+    }
+    h += "</div>";
+    h += '<div class="session">';
+    if (kind === "intervals") {
+      const z = ZONES[p.zone];
+      h += '<h2 class="session-name">' + esc(p.reps + " × " + fmtWork(p)) + '</h2><p class="session-sub">At ' + esc(z.name) + " (" + z.band + "/km), " +
+        (p.rest >= 120 && p.rest % 60 === 0 ? p.rest / 60 + " min" : p.rest + " s") + " jog between. Pace call every 250 m: on pace means " + fmtPace(z.target - tol) + "–" + fmtPace(z.target + tol) + "/km.</p>";
+      h += '<ol class="steps"><li><span class="what">Warm-up<span>Easy, with 4 × 20 s strides from 8 min</span></span><span class="how">12 min</span></li>' +
+        '<li><span class="what">' + p.reps + " intervals of " + esc(fmtWork(p)) + "<span>" + (p.kind === "dist" ? "Each ends on GPS distance" : "Each ends on time") + '</span></span><span class="how">' + fmtPace(z.target) + "/km</span></li>" +
+        '<li><span class="what">Rest<span>Jog between intervals</span></span><span class="how">' + (p.rest >= 120 && p.rest % 60 === 0 ? p.rest / 60 + " min" : p.rest + " s") + "</span></li>" +
+        '<li><span class="what">Warm-down<span>Easy</span></span><span class="how">8 min</span></li></ol>';
+      h += '<p class="total">About ' + Math.round(iEst(p) / 60) + " minutes in total.</p>";
+    } else {
+      h += '<h2 class="session-name">' + esc(p.title) + "</h2>";
+      const sub = p.kind === "race" ? "Goal 40:45. A call every km with your split, average and pace check; distance left in the last 2.5 km." :
+        "A call every km with your split and average pace" + (p.segs.some((s) => s.half) ? ", plus a pace check every 500 m in race-pace blocks" : "") +
+        ". " + (p.kind === "easy" ? "It warns you if a km is quicker than 5:15. " : "") + "Distance left in the last quarter.";
+      h += '<p class="session-sub">' + esc(sub) + "</p>" + contSteps(p);
+      h += '<p class="total">About ' + Math.round(contEst(p) / 60) + " minutes at the target paces.</p>";
+    }
+    h += "</div>";
+    h += '<div class="panel"><div class="panel-row"><div><p class="status" id="gpsStatus"><span class="dot ' + gs.cls + '"></span>' + esc(gs.text) + '</p><p class="status-note" id="gpsNote">' + esc(gs.note) +
+      '</p></div><button type="button" class="btn small" id="gpsBtn" data-act="gps"' + (gps.state !== "off" && gps.state !== "denied" ? " hidden" : "") + ">Check GPS</button></div></div>";
+    h += '<div class="panel"><div class="panel-row"><div><p class="status">Voice cues</p><p class="status-note">Through your headphones or the phone speaker. Test the volume before you go.</p></div>' +
+      '<button type="button" class="btn small" data-act="test-voice-run">Test voice</button></div></div>';
+    if (kind !== "easy") h += '<div class="field"><span class="label" id="tolLbl">On-pace window</span><div class="seg" role="group" aria-labelledby="tolLbl">' +
+      [3, 5, 8].map((v) => '<button type="button" data-act="tol" data-tol="' + v + '" aria-pressed="' + (tol === v) + '">±' + v + " s/km</button>").join("") + "</div></div>";
+    h += runHistoryHtml();
+    h += '<p class="fine">Keep this page open with the screen on for the whole run. If the screen locks, the timer, voice and GPS stop.</p>';
+    h += '<div class="sticky-bar"><button type="button" class="btn primary wide" data-act="run-start">Start ' + (kind === "intervals" ? "intervals" : kind === "easy" ? "easy run" : p.kind === "race" ? "race" : "long run") + "</button></div></section>";
+    app.innerHTML = h;
+  }
+  function runHistoryHtml() {
+    const hs = RS.history.slice().reverse().slice(0, 10);
+    let h = '<section class="history" aria-labelledby="rHistTitle"><h2 class="section-title" id="rHistTitle">Recent runs</h2>';
+    if (!hs.length) return h + '<p class="soft">Your runs show up here, with each km split and rep.</p></section>';
     hs.forEach((r) => {
-      h += "<details><summary><span>" + esc(fmtDay(new Date(r.date))) + " · " + esc(r.title) + '</span><span class="soft">' +
-        (avgPace(r.reps) ? fmtPace(avgPace(r.reps)) + "/km" : "–") + "</span></summary><ul>";
-      r.reps.forEach((x) => {
-        h += "<li><span>Interval " + x.n + "</span><span>" + esc(fmtDist(x.dist)) + " · " + fmtClock(x.time * 1000) + " · " + fmtPace(x.pace) + "/km</span></li>";
-      });
+      const kind = runKind(r);
+      let avg = r.avg;
+      if (kind === "intervals") { let t = 0, d = 0; (r.reps || []).forEach((x) => { if (x.dist >= 50) { t += x.time; d += x.dist; } }); avg = d ? t / (d / 1000) : null; }
+      h += "<details><summary><span>" + esc(fmtDay(r.date)) + " · " + esc(r.title) + '</span><span class="soft">' + (avg ? fmtPace(avg) + "/km" : "–") + "</span></summary><ul>";
+      if (kind === "intervals") (r.reps || []).forEach((x) => { h += "<li><span>Interval " + x.n + "</span><span>" + esc(fmtDist(x.dist)) + " · " + fmtClock(x.time * 1000) + " · " + fmtPace(x.pace) + "/km</span></li>"; });
+      else {
+        h += "<li><span>Distance and time</span><span>" + esc(fmtDist(r.dist)) + " · " + fmtClock(r.dur * 1000) + "</span></li>";
+        (r.kms || []).forEach((s, i) => { h += "<li><span>Km " + (i + 1) + "</span><span>" + fmtPace(s) + "</span></li>"; });
+      }
       h += "</ul></details>";
     });
     return h + "</section>";
   }
 
+  // ----- Live run -----
+  function renderRun() {
+    if (R.mode === "int") return renderIntervals();
+    const sg = R.segs[R.segIdx], nx = R.segs[R.segIdx + 1];
+    document.body.setAttribute("data-phase", sg.phase === "work" ? "work" : "idle");
+    document.body.classList.toggle("is-paused", R.paused);
+    const segs = R.segs.map((s, k) => '<span class="' + (s.phase === "work" ? "w " : "") + (k < R.segIdx ? "done" : k === R.segIdx ? "now" : "") + '" style="flex:' + (s.dist / R.total).toFixed(4) + '"></span>').join("");
+    let h = '<section class="view run" aria-label="Run"><header class="run-top"><span class="run-title">Week ' + R.w + " · " + esc(R.title) + '</span><span class="meta" id="totalClock"></span></header>';
+    h += '<div class="segs" aria-hidden="true">' + segs + '</div><p class="banner" id="banner" hidden></p>';
+    h += '<div class="stage"><div class="stage-inner"><h1 class="phase-name">' + esc(sg.label + (R.segs.filter((s) => s.key === sg.key).length > 1 && sg.key !== "easy" ? " " + (R.segs.filter((s, i) => s.key === sg.key && i <= R.segIdx).length) + " of " + R.segs.filter((s) => s.key === sg.key).length : "")) + "</h1>";
+    h += '<p class="phase-sub" id="phaseSub"></p>';
+    h += '<div class="count" id="big" aria-hidden="true"></div><div class="bar" aria-hidden="true"><div id="barFill"></div></div><p class="detail" id="detail"></p>';
+    h += '<div class="pace-row"><div class="pace-box"><span class="label">Live pace</span><span class="pace-val" id="livePace">–</span></div>' +
+      '<div class="pace-box"><span class="label">Average</span><span class="pace-val" id="avgPace">–</span></div></div>';
+    h += '<div class="call" id="call" hidden><span class="call-word" id="callWord"></span><span class="call-meta" id="callMeta"></span></div>';
+    h += '<p class="next">' + (nx ? "Next: " + esc(nx.label.toLowerCase()) + " <span>· " + fmtKm(nx.dist) + ", " + esc(nx.desc) + "</span>" : R.segs.length === 1 ? "Keep it easy all the way" : "Last stretch to the finish") + "</p></div></div>";
+    h += runControls(false);
+    h += "</section>";
+    app.innerHTML = h;
+    paintRun(Date.now());
+  }
+  function runControls(intervals) {
+    if (ui.confirmEnd) {
+      return '<div class="confirm"><p class="q">End this ' + (intervals ? "workout" : "run") + '?</p><button type="button" class="btn primary" data-act="run-end-save">Save and finish</button>' +
+        '<button type="button" class="btn" data-act="run-end-discard">Discard</button><button type="button" class="link-btn" data-act="run-end-cancel">Keep going</button></div>';
+    }
+    let h = '<div class="controls ' + (intervals ? "three" : "two") + '"><button type="button" class="btn" data-act="run-pause">' + (R.paused ? "Resume" : "Pause") + "</button>";
+    if (intervals) h += '<button type="button" class="btn" data-act="run-skip"' + (R.paused ? " disabled" : "") + ">Skip</button>";
+    h += '<button type="button" class="btn" data-act="run-end">End</button></div>';
+    h += '<div class="gps-line"><span id="gpsLine"></span><button type="button" class="link-btn" data-act="lock">Lock screen</button></div>';
+    return h;
+  }
   function phaseTitle(ph) {
     if (ph.type === "warmup") return "Warm-up";
     if (ph.type === "cool") return "Warm-down";
     if (ph.type === "rest") return "Rest " + ph.n;
     return "Interval " + ph.n + " of " + R.plan.reps;
   }
-  function nextText(i) {
+  function iNextText(i) {
     const nx = R.phases[i + 1], z = ZONES[R.plan.zone];
     if (!nx) return "Then you're done.";
     if (nx.type === "work") return "Next: interval " + nx.n + " <span>· " + esc(fmtWork(R.plan)) + " at " + fmtPace(z.target) + "/km</span>";
-    if (nx.type === "rest") return "Then rest " + nx.n + " <span>· " + esc(fmtRest(nx.dur)) + " jog</span>";
+    if (nx.type === "rest") return "Then rest " + nx.n + " <span>· " + (nx.dur >= 120 && nx.dur % 60 === 0 ? nx.dur / 60 + " min" : nx.dur + " s") + " jog</span>";
     return "Then warm-down <span>· 8 min easy</span>";
   }
-
-  function renderRun() {
-    const ph = R.phases[R.i], z = ZONES[R.plan.zone], tol = store.tol;
+  function renderIntervals() {
+    const ph = R.phases[R.i], z = ZONES[R.plan.zone], tol = RS.tol;
     document.body.setAttribute("data-phase", ph.type === "work" ? "work" : ph.type === "rest" ? "rest" : "idle");
     document.body.classList.toggle("is-paused", R.paused);
     const total = R.phases.reduce((a, p) => a + phaseSecs(p), 0);
-    const segs = R.phases.map((p, k) => '<span class="' + (p.type === "work" ? "w " : "") + (k < R.i ? "done" : k === R.i ? "now" : "") +
-      '" style="flex:' + (phaseSecs(p) / total).toFixed(4) + '"></span>').join("");
-    let h = '<section class="view run" aria-label="Interval run">';
-    h += '<header class="run-top"><span>Week ' + R.w + " · " + esc(title(R.plan)) + '</span><span class="soft" id="totalClock"></span></header>';
-    h += '<div class="segs" aria-hidden="true">' + segs + "</div>";
-    h += '<p class="banner" id="banner" hidden></p>';
-    h += '<div class="stage"><h1 class="phase-name">' + esc(phaseTitle(ph)) + "</h1>";
-    h += '<p class="phase-sub" id="phaseSub"></p>';
-    h += '<div class="count" id="big" aria-hidden="true"></div>';
-    h += '<div class="bar" aria-hidden="true"><div id="barFill"></div></div>';
-    h += '<p class="detail" id="detail"></p>';
+    const segs = R.phases.map((p, k) => '<span class="' + (p.type === "work" ? "w " : "") + (k < R.i ? "done" : k === R.i ? "now" : "") + '" style="flex:' + (phaseSecs(p) / total).toFixed(4) + '"></span>').join("");
+    let h = '<section class="view run" aria-label="Interval run"><header class="run-top"><span class="run-title">Week ' + R.w + " · " + esc(R.plan.reps + " × " + fmtWork(R.plan)) + '</span><span class="meta" id="totalClock"></span></header>';
+    h += '<div class="segs" aria-hidden="true">' + segs + '</div><p class="banner" id="banner" hidden></p>';
+    h += '<div class="stage"><div class="stage-inner"><h1 class="phase-name">' + esc(phaseTitle(ph)) + '</h1><p class="phase-sub" id="phaseSub"></p>';
+    h += '<div class="count" id="big" aria-hidden="true"></div><div class="bar" aria-hidden="true"><div id="barFill"></div></div><p class="detail" id="detail"></p>';
     if (ph.type === "work") {
       h += '<div class="pace-row"><div class="pace-box"><span class="label">Live pace</span><span class="pace-val" id="livePace">–</span></div>' +
         '<div class="pace-box"><span class="label">On pace</span><span class="pace-val window">' + fmtPace(z.target - tol) + "–" + fmtPace(z.target + tol) + "</span></div></div>";
@@ -926,56 +1688,60 @@ body.locked .controls, body.locked .gps-line { visibility: hidden; }
       h += '<div class="pace-row"><div class="pace-box"><span class="label">Live pace</span><span class="pace-val" id="livePace">–</span></div>' +
         '<div class="pace-box"><span class="label">Distance</span><span class="pace-val" id="totDist">0 m</span></div></div>';
     }
-    h += '<p class="next">' + nextText(R.i) + "</p></div>";
-    if (ui.confirmEnd) {
-      h += '<div class="confirm"><p class="q">End this workout?</p>' +
-        (R.reps.length || R.cur ? '<button type="button" class="btn primary" data-act="end-save">Save and finish</button>' : "") +
-        '<button type="button" class="btn" data-act="end-discard">Discard</button>' +
-        '<button type="button" class="link-btn" data-act="end-cancel">Keep going</button></div>';
-    } else {
-      h += '<div class="controls"><button type="button" class="btn" data-act="pause">' + (R.paused ? "Resume" : "Pause") + "</button>" +
-        '<button type="button" class="btn" data-act="skip"' + (R.paused ? " disabled" : "") + ">Skip</button>" +
-        '<button type="button" class="btn" data-act="end">End</button></div>';
-      h += '<div class="gps-line"><span id="gpsLine"></span><button type="button" class="link-btn" data-act="lock" style="padding:0;min-height:0">Lock screen</button></div>';
-    }
-    h += "</section>";
+    h += '<p class="next">' + iNextText(R.i) + "</p></div></div>";
+    h += runControls(true) + "</section>";
     app.innerHTML = h;
-    paint(now());
+    paintRun(Date.now());
   }
-
-  function paint(t) {
+  function paintRun(t) {
     if (!R || R.done || ui.view !== "run") return;
-    const ph = R.phases[R.i], el = (R.paused ? R.pauseAt : t) - R.phaseStart;
-    const tc = $("totalClock"); if (tc) tc.textContent = fmtClock((R.paused ? R.pauseAt : t) - R.startedAt);
-    const big = $("big"), sub = $("phaseSub"), det = $("detail"), fill = $("barFill");
+    const tt = R.paused ? R.pauseAt : t;
+    const big = $("big"), sub = $("phaseSub"), det = $("detail"), fill = $("barFill"), tc = $("totalClock");
     let bigHtml = "", subText = "", detText = "", frac = 0;
-    if (ph.type === "work" && ph.kind === "dist") {
-      const rep = R.cur, left = Math.max(0, ph.dist - (rep ? rep.dist : 0));
-      bigHtml = Math.round(left) + "<small>m to go</small>";
-      frac = rep ? rep.dist / ph.dist : 0;
-      subText = fmtWork(R.plan) + " at " + fmtPace(ZONES[R.plan.zone].target) + "/km";
-      detText = fmtClock(el) + " elapsed · target " + fmtClock(ph.est * 1000);
-      if (!gpsHealthy(t)) detText = "No GPS: this rep ends at " + fmtClock(ph.est * 1000);
-    } else {
-      const left = ph.dur * 1000 - el;
-      bigHtml = fmtClock(left);
-      frac = el / (ph.dur * 1000);
-      if (ph.type === "work") {
+    if (R.mode === "int") {
+      if (tc) tc.textContent = fmtClock(tt - R.startedAt);
+      const ph = R.phases[R.i], el = tt - R.phaseStart;
+      if (ph.type === "work" && ph.kind === "dist") {
+        const left = Math.max(0, ph.dist - (R.cur ? R.cur.dist : 0));
+        bigHtml = Math.round(left) + "<small>m to go</small>";
+        frac = R.cur ? R.cur.dist / ph.dist : 0;
         subText = fmtWork(R.plan) + " at " + fmtPace(ZONES[R.plan.zone].target) + "/km";
-        detText = R.cur ? fmtDist(R.cur.dist) + " so far" : "";
-      } else if (ph.type === "warmup") {
-        const s = el / 1000;
-        const k = STRIDES.findIndex((x) => s < x + STRIDE_LEN);
-        if (k === -1) subText = "Easy. Interval 1 is next.";
-        else if (s >= STRIDES[k]) subText = "Stride " + (k + 1) + " of 4: ease off in " + Math.ceil(STRIDES[k] + STRIDE_LEN - s) + " s";
-        else subText = (k === 0 ? "Easy running. Strides start in " : "Easy. Stride " + (k + 1) + " in ") + fmtClock((STRIDES[k] - s) * 1000);
-      } else if (ph.type === "rest") {
-        subText = "Jog easy";
-        const last = R.reps[R.reps.length - 1];
-        if (last) detText = "Interval " + last.n + ": " + fmtDist(last.dist) + " in " + fmtClock(last.time * 1000) + (last.pace ? ", " + fmtPace(last.pace) + "/km" : "");
+        detText = gpsHealthy(t) ? fmtClock(el) + " elapsed · target " + fmtClock(ph.est * 1000) : "No GPS: this rep ends at " + fmtClock(ph.est * 1000);
       } else {
-        subText = "Easy jog to finish";
+        bigHtml = fmtClock(ph.dur * 1000 - el);
+        frac = el / (ph.dur * 1000);
+        if (ph.type === "work") { subText = fmtWork(R.plan) + " at " + fmtPace(ZONES[R.plan.zone].target) + "/km"; detText = R.cur ? fmtDist(R.cur.dist) + " so far" : ""; }
+        else if (ph.type === "warmup") {
+          const s = el / 1000, k = STRIDES.findIndex((x) => s < x + STRIDE_LEN);
+          if (k === -1) subText = "Easy. Interval 1 is next.";
+          else if (s >= STRIDES[k]) subText = "Stride " + (k + 1) + " of 4: ease off in " + Math.ceil(STRIDES[k] + STRIDE_LEN - s) + " s";
+          else subText = (k === 0 ? "Easy running. Strides start in " : "Easy. Stride " + (k + 1) + " in ") + fmtClock((STRIDES[k] - s) * 1000);
+        } else if (ph.type === "rest") {
+          subText = "Jog easy";
+          const last = R.reps[R.reps.length - 1];
+          if (last) detText = "Interval " + last.n + ": " + fmtDist(last.dist) + " in " + fmtClock(last.time * 1000) + (last.pace ? ", " + fmtPace(last.pace) + "/km" : "");
+        } else subText = "Easy jog to finish";
       }
+      const td = $("totDist"); if (td) td.textContent = fmtDist(R.totalDist);
+    } else {
+      const el = tt - R.runStart, sg = R.segs[R.segIdx];
+      if (tc) tc.textContent = fmtClock(el);
+      bigHtml = (R.totalDist / 1000).toFixed(2) + "<small>of " + fmtKm(R.total) + "</small>";
+      frac = R.totalDist / R.total;
+      subText = sg.desc.charAt(0).toUpperCase() + sg.desc.slice(1);
+      if (R.strides && R.strideStart != null) {
+        const s = (tt - R.strideStart) / 1000, cyc = R.strides.on + R.strides.off, k = Math.floor(s / cyc);
+        if (k < R.strides.n) {
+          const inS = s - k * cyc;
+          subText = inS < R.strides.on ? "Stride " + (k + 1) + " of " + R.strides.n + ": ease off in " + Math.ceil(R.strides.on - inS) + " s" : "Easy. Stride " + (k + 2 <= R.strides.n ? k + 2 : "") + " in " + Math.ceil(cyc - inS) + " s";
+          if (k + 1 >= R.strides.n && inS >= R.strides.on) subText = "Strides done. Easy to the finish.";
+        }
+      } else if (R.strides) subText += " · strides from " + fmtKm(R.strides.from);
+      const segLeft = Math.max(0, sg.end - R.totalDist);
+      detText = (R.segs.length > 1 ? fmtDist(segLeft) + " left of this block · " : "") + fmtDist(Math.max(0, R.total - R.totalDist)) + " to go";
+      if (!gpsHealthy(t)) detText = "No GPS signal: distance paused until it's back";
+      const avg = $("avgPace");
+      if (avg) avg.innerHTML = R.totalDist >= 200 ? fmtPace((el / 1000) / (R.totalDist / 1000)) + "<small> /km</small>" : "–";
     }
     if (R.paused) subText = "Paused";
     if (big && big.innerHTML !== bigHtml) big.innerHTML = bigHtml;
@@ -983,99 +1749,375 @@ body.locked .controls, body.locked .gps-line { visibility: hidden; }
     if (det && det.textContent !== detText) det.textContent = detText;
     if (fill) fill.style.transform = "scaleX(" + Math.min(1, Math.max(0, frac)).toFixed(4) + ")";
     const lp = $("livePace"); if (lp) { const v = livePace(); lp.innerHTML = v ? fmtPace(v) + "<small> /km</small>" : "–"; }
-    const td = $("totDist"); if (td) td.textContent = fmtDist(R.totalDist);
     const call = $("call");
-    if (call && R.lastCall) {
-      call.hidden = false;
-      call.className = "call " + R.lastCall.v;
-      $("callWord").textContent = PHRASE[R.lastCall.v];
-      $("callMeta").textContent = fmtPace(R.lastCall.pace) + "/km at " + R.lastCall.m + " m";
+    if (call) {
+      let word = null, meta = "", cls = "on";
+      if (R.mode === "int" || (R.lastCall && R.segs[R.segIdx].half)) {
+        if (R.lastCall) { word = PHRASE[R.lastCall.v]; cls = R.lastCall.v; meta = fmtPace(R.lastCall.pace) + "/km at " + R.lastCall.m + " m"; }
+      } else if (R.lastKm) {
+        const v = R.lastKm.v;
+        cls = v || "on";
+        word = v === "fast" ? (R.segs[R.segIdx].mode === "fast" ? "Ease off" : "Slow down") : v === "slow" ? "Speed up" : "Km " + R.lastKm.k;
+        meta = "Split " + fmtPace(R.lastKm.split) + "/km";
+      }
+      call.hidden = !word;
+      if (word) { call.className = "call " + cls; $("callWord").textContent = word; $("callMeta").textContent = meta; }
     }
-    const gl = $("gpsLine");
-    if (gl) gl.textContent = gps.state === "good" ? "GPS ±" + Math.round(gps.acc) + " m" : gpsSummary().text;
+    const gl = $("gpsLine"); if (gl) gl.textContent = gps.state === "good" ? "GPS ±" + Math.round(gps.acc) + " m" : gpsSummary().text;
     const bn = $("banner");
-    if (bn) {
-      const msg = (R.note && t < R.noteUntil ? R.note : "") || (wakeFailed ? "Your screen may lock on its own. Set Auto-Lock to Never in Settings > Display & Brightness." : "");
-      bn.hidden = !msg; if (bn.textContent !== msg) bn.textContent = msg;
-    }
+    if (bn) { const msg = (R.note && t < R.noteUntil ? R.note : "") || (wakeFailed ? WAKE_MSG : ""); bn.hidden = !msg; if (bn.textContent !== msg) bn.textContent = msg; }
   }
 
-  function renderDone() {
-    const r = ui.lastRun, z = ZONES[r.zone], ap = avgPace(r.reps);
-    document.body.setAttribute("data-phase", "done");
-    document.body.classList.remove("is-paused");
-    let h = '<section class="view done" aria-labelledby="doneTitle"><h1 class="done-title" id="doneTitle">' + (r.complete ? "Done." : "Saved.") + "</h1>";
-    h += '<p class="done-meta">Week ' + r.w + " · " + esc(r.title) + " · " + fmtClock(r.dur * 1000) + " · " + esc(fmtDist(r.dist)) + "</p>";
-    if (ap) h += "<p>Average interval pace <strong>" + fmtPace(ap) + "/km</strong>, target " + fmtPace(z.target) + "/km.</p>";
-    h += '<ul class="reps">';
-    r.reps.forEach((x) => {
-      h += '<li><div class="rep-main"><span>Interval ' + x.n + (x.skipped ? " (skipped)" : x.onTime ? " (ended on time)" : "") + "</span><span>" +
-        esc(fmtDist(x.dist)) + " · " + fmtClock(x.time * 1000) + " · " + fmtPace(x.pace) + "/km</span></div>" +
-        (x.splits.length ? '<p class="rep-splits">250 m splits: ' + x.splits.map(fmtPace).join(", ") + "</p>" : "") + "</li>";
-    });
-    if (!r.reps.length) h += '<li><p class="soft">No intervals were logged.</p></li>';
-    h += "</ul>";
-    h += '<div class="done-actions"><button type="button" class="btn" data-act="copy">Copy summary</button>';
-    if (ui.copyText) h += '<textarea class="copy-box" id="copyBox" readonly>' + esc(ui.copyText) + "</textarea>";
-    h += '</div><div class="sticky-bar"><button type="button" class="btn primary big" data-act="home">Back to start</button></div></section>';
-    app.innerHTML = h;
-  }
-  function summaryText(r) {
-    const lines = ["Sub-41 intervals: week " + r.w + ", " + r.title + ", " + fmtDay(new Date(r.date)),
-      "Total " + fmtClock(r.dur * 1000) + ", " + fmtDist(r.dist)];
-    r.reps.forEach((x) => {
-      lines.push("Interval " + x.n + ": " + fmtDist(x.dist) + " in " + fmtClock(x.time * 1000) + " (" + fmtPace(x.pace) + "/km)" +
-        (x.splits.length ? ", splits " + x.splits.map(fmtPace).join(", ") : ""));
-    });
+  // ----- Run summary -----
+  function runSummaryText(r) {
+    const lines = ["Sub-41 " + (runKind(r) === "intervals" ? "intervals" : runKind(r) + " run") + ": week " + r.w + ", " + r.title + ", " + fmtDay(r.date)];
+    if (runKind(r) === "intervals") {
+      lines.push("Total " + fmtClock(r.dur * 1000) + ", " + fmtDist(r.dist));
+      r.reps.forEach((x) => lines.push("Interval " + x.n + ": " + fmtDist(x.dist) + " in " + fmtClock(x.time * 1000) + " (" + fmtPace(x.pace) + "/km)" + (x.splits.length ? ", splits " + x.splits.map(fmtPace).join(", ") : "")));
+    } else {
+      lines.push(fmtDist(r.dist) + " in " + fmtClock(r.dur * 1000) + ", average " + fmtPace(r.avg) + "/km");
+      if (r.kms.length) lines.push("Km splits: " + r.kms.map(fmtPace).join(", "));
+      r.blocks.forEach((b) => lines.push(b.label + " " + fmtKm(b.dist) + ": " + fmtClock(b.time * 1000) + " (" + fmtPace(b.pace) + "/km)"));
+    }
     return lines.join("\n");
   }
+  function renderRunDone() {
+    const r = ui.lastRun;
+    document.body.setAttribute("data-phase", "done");
+    let h = '<section class="view done" aria-labelledby="doneTitle"><h1 class="done-title" id="doneTitle">' + (r.complete ? "Done." : "Saved.") + "</h1>";
+    h += '<p class="done-meta">Week ' + r.w + " · " + esc(r.title) + "</p>";
+    if (runKind(r) === "intervals") {
+      let t = 0, d = 0; r.reps.forEach((x) => { if (x.dist >= 50) { t += x.time; d += x.dist; } });
+      h += "<p>" + fmtClock(r.dur * 1000) + " · " + esc(fmtDist(r.dist)) + (d ? " · average interval pace <strong>" + fmtPace(t / (d / 1000)) + "/km</strong>, target " + fmtPace(ZONES[r.zone].target) + "/km" : "") + "</p>";
+      h += '<ul class="reps">';
+      r.reps.forEach((x) => {
+        h += '<li><div class="rep-main"><span>Interval ' + x.n + (x.skipped ? " (skipped)" : x.onTime ? " (ended on time)" : "") + "</span><span>" + esc(fmtDist(x.dist)) + " · " + fmtClock(x.time * 1000) + " · " + fmtPace(x.pace) + "/km</span></div>" +
+          (x.splits.length ? '<p class="rep-splits">250 m splits: ' + x.splits.map(fmtPace).join(", ") + "</p>" : "") + "</li>";
+      });
+      h += "</ul>";
+    } else {
+      h += "<p><strong>" + esc(fmtDist(r.dist)) + "</strong> in <strong>" + fmtClock(r.dur * 1000) + "</strong> · average <strong>" + fmtPace(r.avg) + "/km</strong></p>";
+      if (r.kms.length) h += '<div class="km-grid">' + r.kms.map((s, i) => "<div><span>Km " + (i + 1) + "</span><b>" + fmtPace(s) + "</b></div>").join("") + "</div>";
+      if (r.blocks.length) { h += '<ul class="summary">'; r.blocks.forEach((b) => { h += "<li><span>" + esc(b.label) + " · " + fmtKm(b.dist) + "</span><span>" + fmtClock(b.time * 1000) + " · " + fmtPace(b.pace) + "/km</span></li>"; }); h += "</ul>"; }
+    }
+    h += '<div class="done-actions"><button type="button" class="btn" data-act="copy-run">Copy summary</button>';
+    if (ui.copyText) h += '<textarea class="copy-box" id="copyBox" readonly>' + esc(ui.copyText) + "</textarea>";
+    h += '</div><div class="sticky-bar"><button type="button" class="btn primary wide" data-act="home">Back to home</button></div></section>';
+    app.innerHTML = h;
+  }
 
-  // ---------- Events ----------
+  // ----- Strength setup -----
+  function kgCell(ex, s) {
+    if (s.none) return '<span class="soft">Bodyweight</span>';
+    if (s.first) return '<span class="soft">Set in session</span>';
+    const chip = s.delta > 0 ? "+" + fmtKg(s.delta) : s.delta < 0 ? "−" + fmtKg(-s.delta) : "same";
+    return fmtKg(s.kg) + ' kg<span class="chip">' + chip + "</span>";
+  }
+  function liftHistoryHtml() {
+    const ss = S.sessions.slice().reverse().slice(0, 12);
+    let h = '<section class="history" aria-labelledby="sHistTitle"><h2 class="section-title" id="sHistTitle">Logged sessions</h2>';
+    if (!ss.length) return h + '<p class="soft">Nothing logged yet. Your first session sets your starting weights.</p></section>';
+    ss.forEach((s) => {
+      h += "<details><summary><span>" + esc(fmtDay(s.date)) + " · " + esc(SESSIONS[s.type].name) + '</span><span class="soft">' + esc(shortWeek(s.week)) + (s.complete ? "" : " · ended early") + "</span></summary><ul>";
+      perExercise(s).forEach((r) => { h += "<li><span>" + esc(r.name) + "</span><span>" + esc(r.val) + "</span></li>"; });
+      h += "</ul></details>";
+    });
+    return h + "</section>";
+  }
+  function perExercise(rec) {
+    const out = [];
+    SESSIONS[rec.type].pairs.forEach((p) => p.forEach((id) => {
+      const rs = rec.sets.filter((r) => r.ex === id);
+      if (!rs.length) return;
+      const ex = EX[id];
+      const val = ex.load === "none" ? rs.length + (rs.length === 1 ? " set" : " sets") : rs.map((r) => fmtKg(r.kg)).join(" · ") + " kg";
+      const reps = rs.map((r) => r.reps).filter((r) => r != null);
+      out.push({ name: ex.name, val: val, reps: reps.length && !ex.hold ? reps.join(" · ") + " reps" : "" });
+    }));
+    return out;
+  }
+  function renderLiftSetup() {
+    document.body.setAttribute("data-phase", "idle");
+    const auto = planWeek(), w = ui.sWeek || auto, t = ui.sType || defaultType(w), Sx = SESSIONS[t], pre = beforePlan();
+    let h = '<section class="view scroll" aria-labelledby="liftTitle">' + backLink();
+    h += '<header><p class="label">Sub-41 plan · ' + shortWeek(w) + '</p><h1 class="title" id="liftTitle">' + esc(Sx.name) +
+      '</h1><p class="lede">' + esc(Sx.day) + ", about 25 minutes. The voice counts every rep, tells you what's next and which weight to use.</p></header>";
+    if (C) h += '<div class="notice"><p class="notice-title">Unfinished: ' + esc(SESSIONS[C.type].name) + '</p><div class="notice-actions"><button type="button" class="btn primary" data-act="lift-resume">Resume</button>' +
+      (C.sets.length ? '<button type="button" class="btn" data-act="lift-close">Save and close</button>' : '<button type="button" class="btn" data-act="lift-discard">Discard</button>') + "</div></div>";
+    let opts = "";
+    for (let i = 1; i <= 10; i++) opts += '<option value="' + i + '"' + (i === w ? " selected" : "") + ">Week " + i + (isLight(i) ? " · lighter" : i === 10 ? " · race" : "") + (i === auto && !pre ? " (now)" : "") + "</option>";
+    if (auto > 10) opts += '<option value="' + auto + '"' + (w === auto ? " selected" : "") + ">After the race (now)</option>";
+    h += '<div class="fields"><div class="field"><span class="label" id="sessLbl">Session</span><div class="seg" role="group" aria-labelledby="sessLbl">' +
+      '<button type="button" data-act="stype" data-type="A" aria-pressed="' + (t === "A") + '">A · Mon</button>' +
+      '<button type="button" data-act="stype" data-type="B" aria-pressed="' + (t === "B") + '">B · Thu</button></div></div>' +
+      '<div class="field"><label class="label" for="sWeekSel">Plan week</label><div class="select-wrap"><select id="sWeekSel">' + opts + "</select></div></div></div>";
+    h += '<p class="week-note">' + esc(weekNote(w, t)) + '</p><div class="plan">';
+    Sx.pairs.forEach((pair, pi) => {
+      const n = setsFor(pi, w);
+      h += '<div class="pair"><div class="pair-head"><span class="label">Pair ' + PAIRS[pi] + '</span><span class="label">' + n + " rounds</span></div>";
+      pair.forEach((id, ei) => {
+        const ex = EX[id], open = ui.preview === id;
+        h += '<button type="button" class="row" data-act="preview" data-id="' + id + '" aria-expanded="' + open + '"><span class="tag">' + PAIRS[pi] + (ei + 1) +
+          '</span><span class="nm">' + esc(ex.name) + '<span class="dose">' + n + " × " + esc(doseText(ex)) + '</span></span><span class="kg">' + kgCell(ex, suggest(id, w)) + "</span></button>";
+        if (open) h += '<div class="fig fig-start" data-fig="' + ex.anim + '" data-mode="demo"></div><p class="soft">' + esc(ex.cue) + "</p>";
+      });
+      h += "</div>";
+    });
+    h += '</div><p class="tap-hint">Tap an exercise to see how it moves.</p>';
+    h += '<div class="field"><span class="label" id="restLbl">Rest between rounds</span><div class="seg" role="group" aria-labelledby="restLbl">' +
+      RESTS.map((r) => '<button type="button" data-act="rest-opt" data-rest="' + r + '" aria-pressed="' + (S.rest === r) + '">' + r + " s</button>").join("") + "</div></div>";
+    h += '<div class="panel"><div class="panel-row"><div><p class="status">Voice coach</p><p class="status-note">Counts at 2 seconds down, 1 up. Test the volume with your headphones.</p></div>' +
+      '<button type="button" class="btn small" data-act="test-voice-lift">Test voice</button></div></div>';
+    h += liftHistoryHtml();
+    h += '<p class="fine">Keep this page open with the screen on. If the phone locks, the count stops.</p>';
+    h += '<div class="sticky-bar">' + (C ? '<button type="button" class="btn primary wide" data-act="lift-resume">Resume ' + esc(SESSIONS[C.type].name) + "</button>"
+      : (w === 10 && t === "B" ? '<button type="button" class="btn primary wide" disabled>No Strength B in race week</button>' : '<button type="button" class="btn primary wide" data-act="lift-start">Start ' + esc(Sx.name) + "</button>")) + "</div></section>";
+    app.innerHTML = h;
+  }
+
+  // ----- Strength session -----
+  function liftTop() {
+    const done = C.sets.length, total = SETS.length;
+    return '<header class="run-top"><button type="button" class="link-btn" data-act="lift-end">End</button><div class="meta"><div>' + esc(SESSIONS[C.type].name) + " · " +
+      esc(shortWeek(C.week)) + "</div><div>" + done + " of " + total + ' sets · <span id="elapsed">' + fmtClock(Date.now() - C.startedAt) + "</span></div></div></header>" +
+      '<div class="prog" aria-hidden="true"><div style="transform:scaleX(' + (done / total).toFixed(3) + ')"></div></div>' +
+      '<p class="banner" id="banner"' + (wakeFailed ? "" : " hidden") + ">" + WAKE_MSG + "</p>";
+  }
+  function liftConfirm() {
+    return '<div class="confirm"><p class="q">End this session?</p>' +
+      (C.sets.length ? '<p class="soft">The ' + C.sets.length + " sets you've done are saved and count towards next week.</p>" +
+        '<button type="button" class="btn primary" data-act="lift-end-save">Save and finish</button>' : '<p class="soft">Nothing is logged yet.</p>') +
+      '<button type="button" class="btn" data-act="lift-discard">Discard session</button><button type="button" class="link-btn" data-act="lift-end-cancel">Keep going</button></div>';
+  }
+  function stepperHtml(id) {
+    const ex = EX[id], v = C.weights[id];
+    if (ex.load === "none") return '<div class="weight"><span class="label">Weight</span><strong class="count-big" style="font-size:2.4rem">Bodyweight</strong></div>';
+    const sg = (C.sug && C.sug[id]) || {};
+    const note = sg.first || sg.lastKg == null ? "First time: choose a weight you could lift 2–3 more reps with." + (ex.allowZero ? " Enter 0 for bodyweight." : "")
+      : sg.why + ". Last time " + fmtKg(sg.lastKg) + " kg in " + shortWeek(sg.lastWeek).toLowerCase() + ".";
+    return '<div class="weight"><label class="label" for="kgInput">Weight, kg ' + esc(loadLabel(ex)) + '</label><div class="stepper">' +
+      '<button type="button" class="step-btn" data-act="minus" aria-label="2 kilograms lighter">−</button>' +
+      '<div class="kg-wrap"><input id="kgInput" class="kg-input" type="text" inputmode="decimal" autocomplete="off" enterkeyhint="done" placeholder="–" value="' + (v == null ? "" : fmtKg(v)) + '"><span class="kg-unit">kg</span></div>' +
+      '<button type="button" class="step-btn" data-act="plus" aria-label="2 kilograms heavier">+</button></div>' +
+      '<p class="weight-note">' + esc(note) + '</p><p class="err" id="kgErr" role="alert"></p></div>';
+  }
+  function renderLift() {
+    if (C.phase === "warmup") return renderLiftWarmup();
+    if (C.phase === "set") return renderLiftSet();
+    return renderLiftLead();
+  }
+  function renderLiftWarmup() {
+    document.body.setAttribute("data-phase", "idle");
+    const first = SETS[0];
+    let h = '<section class="view run">' + liftTop() + '<div class="stage"><div class="stage-inner">';
+    h += '<p class="lead-word">Warm-up · about 3 minutes</p><h1 class="ex-name">Hips and core first</h1><ol class="warm-list">' + WARM_MOVES.map((x) => "<li>" + esc(x) + "</li>").join("") + "</ol>";
+    h += '<p class="soft">First up: ' + first.tag + " " + esc(EX[first.ex].name) + " · " + esc(weightText(first.ex)) + "</p></div></div>";
+    h += ui.confirmEnd ? liftConfirm() : '<div class="controls last"><button type="button" class="btn primary wide" data-act="warm-done">Start the session</button></div>';
+    app.innerHTML = h + "</section>";
+  }
+  function renderLiftLead() {
+    const st = SETS[C.k], ex = EX[st.ex], hold = C.phase === "hold", rest = C.leadType === "rest" && !hold;
+    document.body.setAttribute("data-phase", rest ? "rest" : "idle");
+    document.body.classList.toggle("is-paused", C.paused);
+    const word = hold ? "Ready when you are" : C.leadType === "rest" ? "Rest" : C.leadType === "ready" ? "Get ready" : C.leadType === "go" ? "Starting" : "Next exercise";
+    let h = '<section class="view run">' + liftTop() + '<div class="stage"><div class="stage-inner">';
+    h += '<p class="lead-word">' + esc(C.paused ? "Paused" : word) + "</p>";
+    if (!hold) h += '<div class="count-big" id="leadCount">' + Math.ceil(C.leadDur) + '</div><div class="bar" aria-hidden="true"><div id="leadBar"></div></div>';
+    h += '<div class="next-card"><div class="tagline"><span class="tag-pill">' + st.tag + "</span><span>Set " + st.set + " of " + st.of + " · " + esc(doseText(ex)) + "</span></div>" +
+      '<h2 class="ex-name">' + esc(ex.name) + '</h2><p class="cue">' + esc(ex.cue) + "</p>" +
+      '<div class="fig fig-next" data-fig="' + ex.anim + '" data-mode="demo"></div>' + stepperHtml(st.ex) + (ex.swap ? '<p class="swap">' + esc(ex.swap) + "</p>" : "") + "</div></div></div>";
+    if (ui.confirmEnd) h += liftConfirm();
+    else if (hold) h += '<div class="controls last"><button type="button" class="btn primary wide" data-act="lift-go">Start set</button></div>';
+    else if (rest) h += '<div class="controls two last"><button type="button" class="btn" data-act="add-rest">+15 s</button><button type="button" class="btn primary" data-act="skip-lead">Start now</button></div>';
+    else h += '<div class="controls two last"><button type="button" class="btn" data-act="lift-pause">' + (C.paused ? "Resume" : "Pause") + '</button><button type="button" class="btn primary" data-act="skip-lead">Start now</button></div>';
+    app.innerHTML = h + "</section>";
+    sPaintLead((Date.now() - C.t0) / 1000);
+  }
+  function sPaintLead(e) {
+    if (!C || C.phase !== "lead") return;
+    if (C.paused) e = (C.pausedAt - C.t0) / 1000;
+    const left = Math.max(0, C.leadDur - e), el = $("leadCount"), bar = $("leadBar");
+    if (el) { const s = String(Math.ceil(left)); if (el.textContent !== s) el.textContent = s; }
+    if (bar) bar.style.transform = "scaleX(" + Math.min(1, left / C.leadDur).toFixed(4) + ")";
+    sPaintClock();
+  }
+  function renderLiftSet() {
+    const st = SETS[C.k], ex = EX[st.ex], p = setPlan(st.ex);
+    document.body.setAttribute("data-phase", "work");
+    document.body.classList.toggle("is-paused", C.paused);
+    let h = '<section class="view run">' + liftTop() + '<div class="stage"><div class="stage-inner">';
+    h += '<div class="tagline"><span class="tag-pill">' + st.tag + "</span><span>Set " + st.set + " of " + st.of + " · " + esc(doseText(ex)) + '</span></div><h1 class="ex-name">' + esc(ex.name) + "</h1>";
+    h += '<div class="fig fig-set" data-fig="' + ex.anim + '" data-mode="set"></div>';
+    h += '<div class="counter"><span class="num" id="repNum">0</span><span class="of" id="repOf">' + (p.timed ? "s" : "/ " + p.target) + '</span><span class="side" id="sideLbl"></span></div>';
+    h += '<div class="bar" aria-hidden="true"><div id="setBar"></div></div><p class="extra" id="extra"></p>';
+    if (ex.load !== "none") h += '<div class="set-weight"><span><strong id="setKg">' + esc(weightText(st.ex)) + '</strong></span><span class="mini"><button type="button" class="step-btn" data-act="minus" aria-label="2 kilograms lighter">−</button><button type="button" class="step-btn" data-act="plus" aria-label="2 kilograms heavier">+</button></span></div>';
+    h += "</div></div>";
+    h += ui.confirmEnd ? liftConfirm() : '<div class="controls two last"><button type="button" class="btn" data-act="lift-pause">' + (C.paused ? "Resume" : "Pause") + '</button><button type="button" class="btn primary" data-act="stop-set">' + (p.timed ? "End hold" : "Stop set") + "</button></div>";
+    app.innerHTML = h + "</section>";
+    sPaintSet((Date.now() - C.t0) / 1000, p);
+  }
+  function sPaintSet(e, p) {
+    if (!C || C.phase !== "set") return;
+    if (C.paused) e = (C.pausedAt - C.t0) / 1000;
+    const st = SETS[C.k], ex = EX[st.ex], pos = setPos(p, Math.max(0, e));
+    const num = $("repNum"), side = $("sideLbl"), bar = $("setBar"), extra = $("extra");
+    let n, sideTxt = "", extraTxt = "", frac;
+    if (p.sides > 1) {
+      const nm = { leg: ["First leg", "Second leg"], arm: ["First arm", "Second arm"], hand: ["First hand", "Other hand"], side: ["First side", "Second side"] }[ex.per] || ["First side", "Second side"];
+      sideTxt = nm[pos.side];
+    }
+    if (pos.gap) sideTxt = switchText(ex).replace(".", "");
+    if (p.timed) { n = pos.gap ? Math.ceil(p.gap - pos.local) : Math.ceil(p.sideDur - pos.local); frac = pos.gap ? 0 : pos.local / p.sideDur; }
+    else {
+      n = pos.gap ? p.max : Math.min(p.max, Math.floor(pos.local / p.tempo));
+      frac = pos.gap ? 1 : pos.local / p.sideDur;
+      if (!pos.gap && n >= p.target && p.max > p.target) extraTxt = "Extra reps if you've got them. Tap Stop set when you're done.";
+      const of = $("repOf"); if (of) of.textContent = "/ " + (n >= p.target && p.max > p.target ? p.max : p.target);
+    }
+    if (num && num.textContent !== String(n)) num.textContent = String(n);
+    if (side && side.textContent !== sideTxt) side.textContent = sideTxt;
+    if (extra && extra.textContent !== extraTxt) extra.textContent = extraTxt;
+    if (bar) bar.style.transform = "scaleX(" + Math.min(1, Math.max(0, frac)).toFixed(4) + ")";
+    sPaintClock();
+  }
+  function sPaintClock() {
+    const el = $("elapsed"); if (el && C) el.textContent = fmtClock(Date.now() - C.startedAt);
+    const bn = $("banner"); if (bn && ui.view === "lift") bn.hidden = !wakeFailed;
+  }
+  function nextHint(r) {
+    if (r.week === 10) return "Race week strength is done. Keep your legs fresh and run well.";
+    if (r.type === "A") return "Next strength session: Strength B on Thursday.";
+    const nw = r.week + 1;
+    if (isLight(nw)) return "Next strength session: Strength A on Monday. Next week is lighter: same weights, fewer sets.";
+    if (nw === 10) return "Next strength session: Strength A on Monday. It's race week, so legs go lighter.";
+    return "Next strength session: Strength A on Monday. Every lift goes up 2 kg next week.";
+  }
+  function renderLiftDone() {
+    const r = ui.lastLift, v = r.type === "A" ? "mon" : "thu", ew = Math.min(r.week, 10);
+    const offerRun = !(ew === 10 && r.type === "B") && !isDone({ t: "easy", v: v }, ew);
+    document.body.setAttribute("data-phase", "done");
+    let h = '<section class="view done" aria-labelledby="doneTitle"><h1 class="done-title" id="doneTitle">' + (r.complete ? "Logged." : "Saved.") + "</h1>" +
+      '<p class="done-meta">' + esc(SESSIONS[r.type].name) + " · " + esc(shortWeek(r.week)) + " · " + Math.max(1, Math.round(r.durationSec / 60)) + ' min</p><ul class="summary">';
+    perExercise(r).forEach((x) => { h += "<li><span>" + esc(x.name) + "</span><span>" + esc(x.val) + (x.reps ? '<br><span class="soft">' + esc(x.reps) + "</span>" : "") + "</span></li>"; });
+    h += '</ul><p class="done-next">' + esc(nextHint(r)) + "</p>";
+    h += '<div class="done-actions"><button type="button" class="btn" data-act="copy-lift">Copy summary</button>';
+    if (ui.copyText) h += '<textarea class="copy-box" id="copyBox" readonly>' + esc(ui.copyText) + "</textarea>";
+    h += "</div><div class=\"sticky-bar\">" + (offerRun ? '<button type="button" class="btn primary wide" data-act="go-run" data-k="easy" data-v="' + v + '" data-w="' + ew + '">Start your ' + esc(easyPlan(ew, v).title) + " run</button>" +
+      '<button type="button" class="link-btn" data-act="home" style="width:100%">Back to home</button>' : '<button type="button" class="btn primary wide" data-act="home">Back to home</button>') + "</div></section>";
+    app.innerHTML = h;
+  }
+  function liftSummaryText(r) {
+    const lines = [SESSIONS[r.type].name + ", " + shortWeek(r.week).toLowerCase() + ", " + fmtDay(r.date)];
+    perExercise(r).forEach((x) => lines.push(x.name + ": " + x.val + (x.reps ? " (" + x.reps + ")" : "")));
+    return lines.join("\n");
+  }
+  function renderGallery() {
+    document.body.setAttribute("data-phase", "idle");
+    const k = location.search.includes("k=1") ? 1 : 0;
+    app.innerHTML = '<div class="gallery">' + Object.keys(ANIM).map((a) => "<div>" + a + '<div class="fig">' + figureSVG(a, k, false) + "</div></div>").join("") + "</div>";
+  }
+
+  // =====================================================================
+  // Events
+  // =====================================================================
+  function nudge(d) {
+    if (!C || !SETS[C.k]) return;
+    const id = SETS[C.k].ex;
+    let v = C.weights[id]; if (v == null) v = 0;
+    v = Math.max(0, Math.round((v + d) * 2) / 2);
+    C.weights[id] = v; saveStrength();
+    const inp = $("kgInput"); if (inp) inp.value = fmtKg(v);
+    const sk = $("setKg"); if (sk) sk.textContent = weightText(id);
+    const er = $("kgErr"); if (er) er.textContent = "";
+  }
+  function copyText(text, b) {
+    const fallback = () => { ui.copyText = text; render(); const box = $("copyBox"); if (box) { box.focus(); box.select(); } };
+    try { navigator.clipboard.writeText(text).then(() => { b.textContent = "Copied"; }, fallback); } catch (err) { fallback(); }
+  }
   app.addEventListener("click", (e) => {
     const b = e.target.closest("[data-act]"); if (!b) return;
     unlockAudio();
-    switch (b.getAttribute("data-act")) {
-      case "start": startRun(); break;
+    const act = b.getAttribute("data-act");
+    switch (act) {
+      case "home": if (!R) stopGps(); ui.view = "home"; ui.lastRun = null; ui.lastLift = null; ui.copyText = null; render(); app.scrollTop = 0; break;
+      case "go-run": {
+        ui.view = "runSetup"; ui.rKind = b.getAttribute("data-k") || null; ui.rVar = b.getAttribute("data-v") || null;
+        ui.rWeek = b.getAttribute("data-w") ? +b.getAttribute("data-w") : null; ui.lastLift = null; ui.copyText = null;
+        startGps(); render(); break;
+      }
+      case "go-lift": ui.view = "liftSetup"; ui.sType = b.getAttribute("data-s") || null; ui.preview = null; render(); break;
+      // run setup
+      case "rkind": ui.rKind = b.getAttribute("data-k"); render(); break;
+      case "rvar": ui.rVar = b.getAttribute("data-v"); render(); break;
+      case "tol": RS.tol = +b.getAttribute("data-tol"); saveRuns(); render(); break;
       case "gps": startGps(); break;
-      case "test-voice": say("On pace. " + spokenPace(ZONES[planFor(ui.week || currentWeek()).zone].target) + ".", true); beep(880, 0.15, 0.25); break;
-      case "tol": store.tol = +b.getAttribute("data-tol"); save(); renderStart(); break;
-      case "pause": togglePause(); break;
-      case "skip": skipPhase(); break;
-      case "end": ui.confirmEnd = true; renderRun(); break;
-      case "end-cancel": ui.confirmEnd = false; renderRun(); break;
-      case "end-save": finishRun(now(), false); break;
-      case "end-discard": discardRun(); break;
+      case "test-voice-run": say("Kilometre 3. Split 5 21. Average 5 24.", true); beep(880, 0.15, 0.25); break;
+      case "run-start": runStart(); break;
+      case "run-pause": runPause(); break;
+      case "run-skip": runSkip(); break;
+      case "run-end": ui.confirmEnd = true; renderRun(); break;
+      case "run-end-cancel": ui.confirmEnd = false; renderRun(); break;
+      case "run-end-save": hush(); finishRun(Date.now(), false); break;
+      case "run-end-discard": runDiscard(); break;
       case "lock": setLock(true); break;
-      case "copy": {
-        const text = summaryText(ui.lastRun);
-        const done = () => { b.textContent = "Copied"; };
-        const fallback = () => { ui.copyText = text; renderDone(); const box = $("copyBox"); if (box) { box.focus(); box.select(); } };
-        try { navigator.clipboard.writeText(text).then(done, fallback); } catch (err) { fallback(); }
+      case "copy-run": copyText(runSummaryText(ui.lastRun), b); break;
+      // strength
+      case "stype": ui.sType = b.getAttribute("data-type"); ui.preview = null; render(); break;
+      case "rest-opt": S.rest = +b.getAttribute("data-rest"); saveStrength(); render(); break;
+      case "preview": { const id = b.getAttribute("data-id"); ui.preview = ui.preview === id ? null : id; render(); break; }
+      case "test-voice-lift": say("One. Two. Three. Rest. Next: bench press. 18 kilos each hand."); beep(620, 0.05, 0.15); break;
+      case "lift-start": sStart(); break;
+      case "lift-resume": sResume(); break;
+      case "lift-close": sFinish(false, ""); break;
+      case "lift-discard": sDiscard(); break;
+      case "warm-done": sLead(0, "ready", ""); break;
+      case "lift-go": {
+        if (needsWeight(C.k)) {
+          const er = $("kgErr"); if (er) er.textContent = "Enter the weight you'll use, in kg." + (EX[SETS[C.k].ex].allowZero ? " Enter 0 for bodyweight." : "");
+          const inp = $("kgInput"); if (inp) inp.focus();
+          break;
+        }
+        sLead(C.k, "go", "");
         break;
       }
-      case "home": ui.view = "start"; ui.lastRun = null; R = null; render(); app.scrollTop = 0; break;
+      case "skip-lead": sSkipLead(); break;
+      case "add-rest": if (C && C.phase === "lead") { C.leadDur += 15; sFired = {}; saveStrength(); sPaintLead((Date.now() - C.t0) / 1000); } break;
+      case "lift-pause": sPause(); break;
+      case "stop-set": sStopSet(); break;
+      case "minus": nudge(-STEP); break;
+      case "plus": nudge(STEP); break;
+      case "lift-end": ui.confirmEnd = true; render(); break;
+      case "lift-end-cancel": ui.confirmEnd = false; render(); break;
+      case "lift-end-save": hush(); sFinish(false, ""); break;
+      case "copy-lift": copyText(liftSummaryText(ui.lastLift), b); break;
     }
   });
   app.addEventListener("change", (e) => {
-    if (e.target.id === "weekSel") { const v = +e.target.value; ui.week = v === currentWeek() ? null : v; renderStart(); }
+    if (e.target.id === "rWeekSel") { const v = +e.target.value; ui.rWeek = v === Math.min(planWeek(), 10) ? null : v; render(); }
+    if (e.target.id === "sWeekSel") { const v = +e.target.value; ui.sWeek = v === planWeek() ? null : v; ui.preview = null; render(); }
   });
+  app.addEventListener("input", (e) => {
+    if (e.target.id === "kgInput" && C && SETS[C.k]) {
+      C.weights[SETS[C.k].ex] = parseKg(e.target.value); saveStrength();
+      const er = $("kgErr"); if (er) er.textContent = "";
+    }
+  });
+  app.addEventListener("keydown", (e) => { if (e.target.id === "kgInput" && e.key === "Enter") { e.preventDefault(); e.target.blur(); } });
   document.addEventListener("pointerdown", unlockAudio, { passive: true });
   document.addEventListener("visibilitychange", () => {
-    if (document.visibilityState === "hidden") { hiddenAt = now(); return; }
-    if (R && !R.done && ui.view === "run") {
-      const gap = hiddenAt ? now() - hiddenAt : 0;
-      requestWake();
-      tick();
-      if (R && !R.done && gap > 3000) {
-        R.note = "The screen was off for " + fmtClock(gap) + ", so cues and GPS paused. Keep the screen on.";
-        R.noteUntil = now() + 60000;
-        paint(now());
-      }
-    }
+    if (document.visibilityState === "hidden") { hiddenAt = Date.now(); return; }
+    const gap = hiddenAt ? Date.now() - hiddenAt : 0;
     hiddenAt = 0;
+    if (R && !R.done && ui.view === "run") {
+      requestWake(); runTick();
+      if (R && !R.done && gap > 3000) { R.note = "The screen was off for " + fmtClock(gap) + ", so cues and GPS paused. Keep the screen on."; R.noteUntil = Date.now() + 60000; paintRun(Date.now()); }
+    }
+    if (C && ui.view === "lift") { requestWake(); sTick(); }
   });
+  window.addEventListener("hashchange", render);
 
   render();
+  requestAnimationFrame(animate);
 })();
 </script>
 </body>
