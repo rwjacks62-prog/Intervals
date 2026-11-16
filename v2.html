@@ -328,6 +328,10 @@ body.is-paused .count, body.is-paused .counter .num, body.is-paused .count-big {
 .call.slow { background: var(--slow); }
 .call .call-word { font-family: var(--font-display); font-weight: 900; font-size: 2rem; line-height: 1; }
 .call .call-meta { font-variant-numeric: tabular-nums; white-space: nowrap; }
+/* Halfway call (v2): its line of numbers is longer, so it can wrap under the word */
+.call.mid { flex-wrap: wrap; row-gap: 0.15rem; }
+.call.mid .call-meta { white-space: normal; }
+.half-line { font-weight: 600; font-variant-numeric: tabular-nums; }
 .next { font-weight: 600; }
 .next span { font-weight: 400; color: var(--fg-soft); }
 .controls { display: grid; gap: 0.6rem; padding: 0.5rem 0 0.5rem; }
@@ -1446,17 +1450,26 @@ void main(){
     } catch (e) {}
   }
   // flush = cut off anything still being said (used for countdowns and phase changes)
-  function say(text, flush) {
+  // lead (v2, the halfway call): wait this many ms before speaking, so its beep is heard first.
+  // Anything else said during that wait waits too, and follows in order.
+  let sayAfter = 0, sayTok = 0;
+  function say(text, flush, lead) {
     if (!text) return;
     if (TEST) console.log("[cue] " + Math.round((Date.now() - T0) / 1000) + "s " + text);
     const live = $("live"); if (live) live.textContent = text;
     if (!synth) return;
+    const now = Date.now(), wait = Math.max(lead || 0, sayAfter - now);
+    if (lead) sayAfter = now + lead;
+    if (wait > 0) { const tok = sayTok; setTimeout(() => { if (tok === sayTok) sayOut(text, flush); }, wait); return; }
+    sayOut(text, flush);
+  }
+  function sayOut(text, flush) {
     try {
       if (flush && (synth.speaking || synth.pending)) { synth.cancel(); setTimeout(() => speakNow(text), 60); }
       else speakNow(text);
     } catch (e) {}
   }
-  function hush() { if (synth) { try { synth.cancel(); } catch (e) {} } }
+  function hush() { sayTok++; sayAfter = 0; if (synth) { try { synth.cancel(); } catch (e) {} } }
   let actx = null;
   function unlockAudio() {
     try {
@@ -1940,7 +1953,9 @@ void main(){
     R = Object.assign({}, plan, {
       mode: "cont", startedAt: t, runStart: t, paused: false, pauseAt: 0, totalDist: 0, done: false,
       segIdx: 0, segStartAt: t, kmNext: 1000, kmAt: t, kms: [], halfNext: null, halfAt: t, warned: {},
-      blocks: [], lastCall: null, lastKm: null, lastQ: null, seq: 0, strideStart: null, fired: {}, note: null
+      blocks: [], lastCall: null, lastKm: null, lastQ: null, seq: 0, strideStart: null, fired: {}, note: null,
+      // halfway call (v2). Not the race-pace 500 m checks, which are halfNext / halfAt / sg.half.
+      midAt: plan.total >= 2000 ? plan.total / 2 : null, midDone: false, mid: null, midPend: null, midShow: null
     });
     cEnterSeg(0, t, false, false);
     R.qFirst = true; // the first 250 m includes getting going, so it is only checked for running too fast
@@ -1987,6 +2002,56 @@ void main(){
   function qReset(x, t, bad) { R.qFrom = x; R.qAt = t; R.qNext = qMark(x); R.qVoid = !!bad; R.qFirst = false; }
   const qWord = (sg, v) => (v === "fast" ? (sg.mode === "fast" ? "Ease off" : PHRASE.fast) : PHRASE[v]);
   const segAt = (m) => R.segs.find((s) => m > s.start && m <= s.end) || R.segs[R.segs.length - 1];
+
+  // ---------------------------------------------------------------------
+  // Halfway call (v2): easy, long and race runs of 2 km or more, once, at half the planned distance (R.midAt),
+  // so out-and-back runs know when to turn round. Not the race-pace 500 m checks (R.halfNext, R.halfAt, sg.half).
+  // On a km mark it joins the km call; on a 250 m or race-pace 500 m check it takes that check's place and ends
+  // with its word; next to a block change or "in 200 metres" it comes first and the other call follows.
+  // It waits for a stride to end, and if GPS was lost or the screen was off at halfway it is said once coaching
+  // resumes, after "Welcome back". Time and average leave out pauses, like the km calls.
+  // ---------------------------------------------------------------------
+  const midHere = (x) => R.midAt != null && !R.midDone && Math.abs(x - R.midAt) < 0.5;
+  function midMark(pos, tc) {
+    const time = (tc - R.runStart) / 1000;
+    R.midDone = true;
+    R.mid = { at: pos, time: time, avg: time / (pos / 1000) };
+    return R.mid;
+  }
+  const midProj = (m) => (R.kind === "race" ? " Projected finish " + spokenTime(m.time * 2) + "." : "");
+  const midNums = (m) => spokenDist(m.at) + " in " + spokenTime(m.time) + ". Average " + spokenPace(m.avg) + "." + midProj(m);
+  // On screen: "4.25 km · 23:10 · 5:27/km" (race: "· proj. 41:00"); a narrow screen wraps only between the parts
+  const midMeta = (m) => [+(m.at / 1000).toFixed(2) + " km", fmtClock(m.time * 1000), fmtPace(m.avg) + "/km"].concat(R.kind === "race" ? ["proj. " + fmtClock(m.time * 2000)] : [])
+    .map((x) => x.replace(/ /g, " ")).join(" · ");
+  // A stride is on, or the next one starts within 12 s (50 m before the first): the halfway call waits
+  function strideBusy(t, x) {
+    const st = R.strides;
+    if (!st) return false;
+    if (R.strideStart == null) return st.from - x < 50;
+    const el = (t - R.strideStart) / 1000, cyc = st.on + st.off, k = Math.floor(el / cyc), inS = el - k * cyc;
+    if (k >= st.n) return false;
+    return inS < st.on + 0.5 || (k + 1 < st.n && cyc - inS < 12);
+  }
+  function midBeep() { beep(1175, 0.16, 0.3); setTimeout(() => beep(784, 0.32, 0.3), 200); }
+  function midSay(text, m) {
+    midBeep();
+    say(text, false, 600);
+    R.midShow = { m: m, seq: ++R.seq };
+  }
+  // ok: said on time. Otherwise it waits in R.midPend for midFlush.
+  function midOut(text, ok, pos) {
+    if (!ok) { R.midPend = { m: R.mid, late: true }; return; }
+    if (strideBusy(Date.now(), pos)) { R.midPend = { m: R.mid, text: text }; return; }
+    midSay(text, R.mid);
+  }
+  // From the run ticker: a halfway call that had to wait
+  function midFlush(t) {
+    const p = R && R.midPend;
+    if (!p || R.done || R.paused || hiddenAt || document.visibilityState === "hidden" || strideBusy(t, R.totalDist)) return;
+    R.midPend = null;
+    midSay(p.late ? "You passed halfway " + spokenDist(Math.max(0, R.totalDist - p.m.at)) + " ago. " + midNums(p.m) : p.text, p.m);
+  }
+
   function cOnDistance(d, t0, t1, bad) {
     if (d <= 0) return;
     if (bad) R.qVoid = true;
@@ -2002,23 +2067,26 @@ void main(){
       if (R.kmNext < R.total) cands.push(["km", R.kmNext]);
       if (nx && nx.key !== "easy" && R.kind !== "race" && !R.warned[R.segIdx + 1] && nx.start - 200 > sg.start) cands.push(["warn", nx.start - 200]);
       cands.push([nx ? "seg" : "finish", sg.end]);
-      cands.sort((a, b) => a[1] - b[1] || (a[0] === "km" ? -1 : 1));
+      // halfway on its own, unless a km, 250 m or race-pace check falls on the same spot (that call carries it)
+      if (R.midAt != null && !R.midDone && !cands.some((c) => (c[0] === "km" || c[0] === "q" || c[0] === "half") && midHere(c[1]))) cands.push(["mid", R.midAt]);
+      cands.sort((a, b) => a[1] - b[1] || (a[0] === "km" || a[0] === "mid" ? -1 : 1));
       const [type, pos] = cands[0];
       if (pos > d1) break;
       const tc = timeAt(pos);
       if (type === "half") {
         const pace = Math.round((tc - R.halfAt) / 1000 * 2), v = cJudge(sg, pace);
-        R.lastCall = { m: pos - sg.start, pace: pace, v: v || "on", unit: "m" };
-        if (fresh(tc)) say(PHRASE[v || "on"] + ". " + spokenPace(pace) + ".");
+        R.lastCall = { m: pos - sg.start, pace: pace, v: v || "on", unit: "m", seq: ++R.seq };
+        if (midHere(pos)) { const m = midMark(pos, tc); midOut("Halfway. " + midNums(m) + " " + PHRASE[v || "on"] + ".", fresh(tc), pos); }
+        else if (fresh(tc)) say(PHRASE[v || "on"] + ". " + spokenPace(pace) + ".");
         R.halfAt = tc; R.halfNext += 500;
       } else if (type === "q") {
         // Spoken only when off pace. Skipped if the GPS was weak or lost during it, during strides,
         // and on the first 250 m if it reads slow (that includes getting going after pressing Start).
         const len = pos - R.qFrom, pace = Math.round((tc - R.qAt) / 1000 / (len / 1000)), v = cJudge(sg, pace) || "on";
-        if (!R.qVoid && len >= 150 && pace > 0 && !(R.qFirst && v === "slow")) {
-          R.lastQ = { m: pos, pace: pace, v: v, word: qWord(sg, v), seq: ++R.seq };
-          if (v !== "on" && fresh(tc)) say(qWord(sg, v) + ". " + spokenPace(pace) + ".");
-        }
+        const ok = !R.qVoid && len >= 150 && pace > 0 && !(R.qFirst && v === "slow");
+        if (ok) R.lastQ = { m: pos, pace: pace, v: v, word: qWord(sg, v), seq: ++R.seq };
+        if (midHere(pos)) { const m = midMark(pos, tc); midOut("Halfway. " + midNums(m) + (ok && v !== "on" ? " " + qWord(sg, v) + "." : ""), fresh(tc), pos); }
+        else if (ok && v !== "on" && fresh(tc)) say(qWord(sg, v) + ". " + spokenPace(pace) + ".");
         qReset(pos, tc, bad);
       } else if (type === "km") {
         const k = Math.round(pos / 1000), split = (tc - R.kmAt) / 1000, avg = (tc - R.runStart) / 1000 / k;
@@ -2029,9 +2097,15 @@ void main(){
         let txt = "Kilometre " + k + ". Split " + spokenPace(split) + ". Average " + spokenPace(avg) + "." + cJudgeText(ksg, v);
         const left = R.total - pos;
         if (pos >= 0.75 * R.total && left > 0) txt += " " + spokenDist(left) + " to go.";
-        if (fresh(tc)) say(txt);
+        if (midHere(pos)) {
+          const m = midMark(pos, tc);
+          midOut("Halfway. Kilometre " + k + ". Split " + spokenPace(split) + "." + cJudgeText(ksg, v) + " " + spokenTime(m.time) + " in. Average " + spokenPace(m.avg) + "." + midProj(m), fresh(tc), pos);
+        } else if (fresh(tc)) say(txt);
         R.kmAt = tc; R.kmNext += 1000;
         qReset(pos, tc, bad);
+      } else if (type === "mid") {
+        const m = midMark(pos, tc);
+        midOut("Halfway. " + midNums(m), fresh(tc), pos);
       } else if (type === "warn") {
         R.warned[R.segIdx + 1] = true;
         if (fresh(tc)) say(nx.label + " in 200 metres.");
@@ -2102,7 +2176,7 @@ void main(){
     if (!R || R.done) return;
     const t = Date.now();
     if (!R.paused) {
-      if (R.mode === "int") iTick(t); else cTick(t);
+      if (R.mode === "int") iTick(t); else { cTick(t); midFlush(t); }
     }
     if (R && !R.done) paintRun(t);
   }
@@ -2140,6 +2214,7 @@ void main(){
       const dur = Math.round(((R.paused ? R.pauseAt : endT) - R.runStart) / 1000), dist = Math.round(R.totalDist);
       rec = { kind: R.kind, v: R.v, date: new Date(R.startedAt).toISOString(), w: R.w, title: R.title, dur: dur, dist: dist,
               avg: dist >= 100 ? dur / (dist / 1000) : null, kms: R.kms, blocks: R.blocks, complete: complete };
+      if (R.mid) rec.mid = { at: R.mid.at, t: Math.round(R.mid.time) }; // halfway: distance in m, time in s without pauses
       if (dist < 100) rec = null;
     }
     if (rec) { RS.history.push(rec); RS.history = RS.history.slice(-60); saveRuns(); }
@@ -2742,7 +2817,8 @@ void main(){
         "A call every km with your split and average pace. A pace check every 250 m speaks only when you're off pace" +
         (p.segs.every((s) => s.key === "easy") ? " (outside 5:15–5:45/km)" : "") + (p.strides ? ", and stops for the strides" : "") +
         (p.segs.some((s) => s.half) ? ". Race-pace blocks keep their pace check every 500 m" : "") + ". Distance left in the last quarter.";
-      h += '<p class="session-sub">' + esc(sub) + "</p>" + contSteps(p);
+      const mid = p.total >= 2000 ? (p.kind === "race" ? " A halfway call with your time, average and projected finish." : " A halfway call with your time and average.") : "";
+      h += '<p class="session-sub">' + esc(sub + mid) + "</p>" + contSteps(p);
       h += '<p class="total">About ' + Math.round(contEst(p) / 60) + " minutes at the target paces.</p>";
     }
     h += "</div>";
@@ -2902,7 +2978,11 @@ void main(){
     const call = $("call");
     if (call) {
       let word = null, meta = "", cls = "on";
-      if (R.mode === "int" || (R.lastCall && R.segs[R.segIdx].half)) {
+      const newest = Math.max(R.lastQ ? R.lastQ.seq : 0, R.lastKm ? R.lastKm.seq : 0, R.lastCall && R.lastCall.seq ? R.lastCall.seq : 0);
+      if (R.mode !== "int" && R.midShow && R.midShow.seq > newest) {
+        // the halfway call, until the next call replaces it
+        word = "Halfway"; cls = "mid"; meta = midMeta(R.midShow.m);
+      } else if (R.mode === "int" || (R.lastCall && R.segs[R.segIdx].half)) {
         if (R.lastCall) { word = PHRASE[R.lastCall.v]; cls = R.lastCall.v; meta = fmtPace(R.lastCall.pace) + "/km at " + R.lastCall.m + " m"; }
       } else if (R.lastQ && (!R.lastKm || R.lastQ.seq > R.lastKm.seq)) {
         // latest 250 m check (newer than the last km call)
@@ -2927,6 +3007,17 @@ void main(){
   const splitsOf = (x) => (Array.isArray(x.splits) ? x.splits : []);
   const kmsOf = (r) => (Array.isArray(r.kms) ? r.kms : []);
   const blocksOf = (r) => (Array.isArray(r.blocks) ? r.blocks : []);
+  // First and second half (v2, from the halfway call). Runs saved before it have no r.mid, so no line.
+  function halfLine(r) {
+    const h = r && r.mid;
+    if (!h || !(h.t > 0) || runKind(r) === "intervals") return "";
+    let s = "First half " + fmtClock(h.t * 1000);
+    if (r.complete && r.dur > h.t) {
+      const t2 = r.dur - h.t, d = t2 - h.t;
+      s += " · second half " + fmtClock(t2 * 1000) + " (" + (d === 0 ? "even" : Math.abs(d) + " s " + (d < 0 ? "quicker" : "slower")) + ")";
+    }
+    return s;
+  }
   function runSummaryText(r) {
     const lines = ["Sub-41 " + (runKind(r) === "intervals" ? "intervals" : runKind(r) + " run") + ": week " + r.w + ", " + r.title + ", " + fmtDay(r.date)];
     if (runKind(r) === "intervals") {
@@ -2934,6 +3025,7 @@ void main(){
       repsOf(r).forEach((x) => lines.push("Interval " + x.n + ": " + fmtDist(x.dist) + " in " + fmtClock(x.time * 1000) + " (" + fmtPace(x.pace) + "/km)" + (splitsOf(x).length ? ", splits " + splitsOf(x).map(fmtPace).join(", ") : "")));
     } else {
       lines.push(fmtDist(r.dist) + " in " + fmtClock(r.dur * 1000) + ", average " + fmtPace(r.avg) + "/km");
+      if (halfLine(r)) lines.push(halfLine(r));
       if (kmsOf(r).length) lines.push("Km splits: " + kmsOf(r).map(fmtPace).join(", "));
       blocksOf(r).forEach((b) => lines.push(b.label + " " + fmtKm(b.dist) + ": " + fmtClock(b.time * 1000) + " (" + fmtPace(b.pace) + "/km)"));
     }
@@ -2960,6 +3052,7 @@ void main(){
       detail += "</ul>";
     } else {
       stats = "<p><strong>" + esc(fmtDist(r.dist)) + "</strong> in <strong>" + fmtClock(r.dur * 1000) + "</strong> · average <strong>" + fmtPace(r.avg) + "/km</strong></p>";
+      if (halfLine(r)) stats += '<p class="half-line">' + esc(halfLine(r)) + "</p>";
       if (kmsOf(r).length) detail += '<div class="km-grid">' + kmsOf(r).map((s, i) => tap("km:" + i, "<span>Km " + (i + 1) + "</span><b>" + fmtPace(s) + "</b>", "km")).join("") + "</div>";
       if (blocksOf(r).length) { detail += '<ul class="summary">'; blocksOf(r).forEach((b) => { detail += "<li><span>" + esc(b.label) + " · " + fmtKm(b.dist) + "</span><span>" + fmtClock(b.time * 1000) + " · " + fmtPace(b.pace) + "/km</span></li>"; }); detail += "</ul>"; }
     }
