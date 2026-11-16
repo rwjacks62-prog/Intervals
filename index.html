@@ -2,6 +2,10 @@
 <html lang="en-GB">
 <head>
 <meta charset="utf-8">
+<script>
+// The main link now opens v2 (route map, new strength programme). To see this original page, add ?v1 to the address.
+if (!/[?&]v1(=|&|$)/.test(location.search)) location.replace("v2.html" + location.search + location.hash);
+</script>
 <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
 <meta name="apple-mobile-web-app-capable" content="yes">
 <meta name="mobile-web-app-capable" content="yes">
