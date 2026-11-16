@@ -407,6 +407,9 @@ body[data-phase="work"] .swap { color: var(--fg); }
 .route { display: flex; flex-direction: column; gap: 0.55rem; }
 .route-map { position: relative; height: 18rem; height: clamp(15rem, 42vh, 22rem); border-radius: 1rem; overflow: hidden; background: var(--panel); }
 .route-inner, .route-svg, .route-gl { position: absolute; inset: 0; }
+/* MapLibre's own stylesheet loads after this one and sets .maplibregl-map { position: relative }, which squashed the street map box
+   to zero height. Two classes outrank its one, and the box also carries the same rule inline. */
+.route-inner > .route-gl { position: absolute; top: 0; right: 0; bottom: 0; left: 0; width: 100%; height: 100%; }
 .route-svg { display: block; width: 100%; height: 100%; }
 .route-gl { opacity: 0; transition: opacity 0.3s ease; }
 .route-inner.gl-on .route-gl { opacity: 1; }
@@ -432,6 +435,18 @@ body[data-phase="work"] .swap { color: var(--fg); }
 .check input { flex-shrink: 0; width: 1.3rem; height: 1.3rem; margin: 0.05rem 0 0; accent-color: var(--accent); }
 .gpx-msg { font-size: 0.9rem; font-weight: 600; }
 .gpx-msg:empty { display: none; }
+.gpx-out { display: flex; flex-direction: column; gap: 0.6rem; }
+.gpx-out:empty { display: none; }
+.gpx-out .copy-box { min-height: 10rem; }
+/* Recent runs (v2): each run opens its finish screen again */
+.run-list { list-style: none; margin: 0; padding: 0; border-bottom: 1px solid var(--line); }
+.run-row { appearance: none; width: 100%; background: none; border: 0; border-top: 1px solid var(--line); color: inherit; font: inherit; text-align: left; display: flex; justify-content: space-between; align-items: center; gap: 1rem; padding: 0.65rem 0; min-height: 2.75rem; cursor: pointer; touch-action: manipulation; }
+.run-row .rr-main { min-width: 0; display: flex; flex-direction: column; }
+.run-row .rr-title { font-weight: 600; }
+.run-row .rr-sub { font-size: 0.88rem; color: var(--fg-soft); font-variant-numeric: tabular-nums; }
+.run-row .rr-pace { font-weight: 600; white-space: nowrap; font-variant-numeric: tabular-nums; color: var(--fg-soft); }
+.run-row:focus-visible { outline: 3px solid var(--accent); outline-offset: 2px; }
+.history .hint { font-size: 0.9rem; color: var(--fg-soft); margin: -0.2rem 0 0.5rem; }
 
 .gallery { display: grid; grid-template-columns: 1fr 1fr; gap: 0.5rem; padding: 1rem 0; overflow-y: auto; }
 .gallery div { border: 1px solid var(--line); border-radius: 0.5rem; padding: 0.25rem; font-size: 0.75rem; }
@@ -2131,6 +2146,7 @@ void main(){
     let route = null;
     try { route = rtFinish(rec, endT); } catch (e) { route = null; }
     ui.lastRun = rec; ui.lastRoute = route; ui.hl = null; ui.view = rec ? "runDone" : "home"; ui.confirmEnd = false; ui.copyText = null;
+    ui.doneFrom = "finish"; ui.gpx = null; ui.gpxMsg = "";
     R = null;
     render();
   }
@@ -2587,10 +2603,40 @@ void main(){
   // =====================================================================
   const app = $("app");
   const ui = { view: "home", rKind: null, rWeek: null, rVar: null, sType: null, sWeek: null, preview: null, confirmEnd: false, locked: false,
-               lastRun: null, lastLift: null, copyText: null, lastRoute: null, hl: null };
+               lastRun: null, lastLift: null, copyText: null, lastRoute: null, hl: null, doneFrom: null, gpx: null, gpxMsg: "" };
+  // Which finish screen is open, kept for this browser tab only (sessionStorage, not the saved runs), so if iPhone
+  // reloads the page while a run's finish screen is open, it comes back. Ignored after 30 minutes.
+  const OPEN_KEY = "sub41-v2-open-run";
+  function rememberOpen() {
+    try {
+      if (ui.view === "runDone" && ui.lastRun) sessionStorage.setItem(OPEN_KEY, JSON.stringify({ id: ui.lastRun.date, from: ui.doneFrom, at: Date.now() }));
+      else sessionStorage.removeItem(OPEN_KEY);
+    } catch (e) {}
+  }
+  // Opens a saved run's finish screen: stats, splits or reps, the map if its route was saved, Copy summary and GPX
+  function openRun(id, from) {
+    const r = RS.history.find((x) => x.date === id);
+    if (!r) return false;
+    let route = null;
+    try { const packed = RT.routes.find((x) => x.id === id); if (packed) route = rtUnpack(packed); } catch (e) { route = null; }
+    if (route && (!Array.isArray(route.pts) || route.pts.length < 2)) route = null;
+    if (MV.id !== id) mapReset();
+    if (!R) stopGps();
+    ui.lastRun = r; ui.lastRoute = route; ui.hl = null; ui.copyText = null; ui.gpx = null; ui.gpxMsg = "";
+    ui.doneFrom = from || "runs"; ui.view = "runDone"; ui.confirmEnd = false;
+    render();
+    const v = app.querySelector(".view"); if (v) v.scrollTop = 0;
+    return true;
+  }
+  function backToRuns() {
+    ui.view = "runSetup"; ui.lastRun = null; ui.lastRoute = null; ui.hl = null; ui.copyText = null; ui.gpx = null; ui.gpxMsg = ""; ui.doneFrom = null;
+    mapReset(); startGps(); render();
+    const t = $("rHistTitle"); if (t && t.scrollIntoView) t.scrollIntoView({ block: "start" });
+  }
   function render() {
     if (location.hash === "#figures") return renderGallery();
     document.body.classList.remove("is-paused");
+    rememberOpen();
     switch (ui.view) {
       case "runSetup": return renderRunSetup();
       case "run": return R ? renderRun() : (ui.view = "home", renderHome());
@@ -2715,20 +2761,18 @@ void main(){
   function runHistoryHtml() {
     const hs = RS.history.slice().reverse().slice(0, 10);
     let h = '<section class="history" aria-labelledby="rHistTitle"><h2 class="section-title" id="rHistTitle">Recent runs</h2>';
-    if (!hs.length) return h + '<p class="soft">Your runs show up here, with each km split and rep.</p></section>';
+    if (!hs.length) return h + '<p class="soft">Your runs show up here. Tap one to see its splits, map and summary again.</p></section>';
+    const withMap = new Set(RT.routes.map((x) => x.id));
+    h += '<p class="hint">Tap a run to open its finish screen: splits, map and summary.</p><ul class="run-list">';
     hs.forEach((r) => {
       const kind = runKind(r);
       let avg = r.avg;
       if (kind === "intervals") { let t = 0, d = 0; (r.reps || []).forEach((x) => { if (x.dist >= 50) { t += x.time; d += x.dist; } }); avg = d ? t / (d / 1000) : null; }
-      h += "<details><summary><span>" + esc(fmtDay(r.date)) + " · " + esc(r.title) + '</span><span class="soft">' + (avg ? fmtPace(avg) + "/km" : "–") + "</span></summary><ul>";
-      if (kind === "intervals") (r.reps || []).forEach((x) => { h += "<li><span>Interval " + x.n + "</span><span>" + esc(fmtDist(x.dist)) + " · " + fmtClock(x.time * 1000) + " · " + fmtPace(x.pace) + "/km</span></li>"; });
-      else {
-        h += "<li><span>Distance and time</span><span>" + esc(fmtDist(r.dist)) + " · " + fmtClock(r.dur * 1000) + "</span></li>";
-        (r.kms || []).forEach((s, i) => { h += "<li><span>Km " + (i + 1) + "</span><span>" + fmtPace(s) + "</span></li>"; });
-      }
-      h += "</ul></details>";
+      const sub = [r.dist != null ? fmtDist(r.dist) : "", r.dur != null ? fmtClock(r.dur * 1000) : "", withMap.has(r.date) ? "map" : ""].filter(Boolean).join(" · ");
+      h += '<li><button type="button" class="run-row" data-act="open-run" data-id="' + esc(r.date) + '"><span class="rr-main"><span class="rr-title">' + esc(fmtDay(r.date)) + " · " + esc(r.title || "Run") + '</span>' +
+        (sub ? '<span class="rr-sub">' + esc(sub) + "</span>" : "") + '</span><span class="rr-pace">' + (avg ? fmtPace(avg) + "/km" : "–") + ' ›</span></button></li>';
     });
-    return h + "</section>";
+    return h + "</ul></section>";
   }
 
   // ----- Live run -----
@@ -2878,39 +2922,46 @@ void main(){
   }
 
   // ----- Run summary -----
+  // Runs saved by older versions of the page may lack some lists, so every list is read through these
+  const repsOf = (r) => (Array.isArray(r.reps) ? r.reps : []);
+  const splitsOf = (x) => (Array.isArray(x.splits) ? x.splits : []);
+  const kmsOf = (r) => (Array.isArray(r.kms) ? r.kms : []);
+  const blocksOf = (r) => (Array.isArray(r.blocks) ? r.blocks : []);
   function runSummaryText(r) {
     const lines = ["Sub-41 " + (runKind(r) === "intervals" ? "intervals" : runKind(r) + " run") + ": week " + r.w + ", " + r.title + ", " + fmtDay(r.date)];
     if (runKind(r) === "intervals") {
       lines.push("Total " + fmtClock(r.dur * 1000) + ", " + fmtDist(r.dist));
-      r.reps.forEach((x) => lines.push("Interval " + x.n + ": " + fmtDist(x.dist) + " in " + fmtClock(x.time * 1000) + " (" + fmtPace(x.pace) + "/km)" + (x.splits.length ? ", splits " + x.splits.map(fmtPace).join(", ") : "")));
+      repsOf(r).forEach((x) => lines.push("Interval " + x.n + ": " + fmtDist(x.dist) + " in " + fmtClock(x.time * 1000) + " (" + fmtPace(x.pace) + "/km)" + (splitsOf(x).length ? ", splits " + splitsOf(x).map(fmtPace).join(", ") : "")));
     } else {
       lines.push(fmtDist(r.dist) + " in " + fmtClock(r.dur * 1000) + ", average " + fmtPace(r.avg) + "/km");
-      if (r.kms.length) lines.push("Km splits: " + r.kms.map(fmtPace).join(", "));
-      r.blocks.forEach((b) => lines.push(b.label + " " + fmtKm(b.dist) + ": " + fmtClock(b.time * 1000) + " (" + fmtPace(b.pace) + "/km)"));
+      if (kmsOf(r).length) lines.push("Km splits: " + kmsOf(r).map(fmtPace).join(", "));
+      blocksOf(r).forEach((b) => lines.push(b.label + " " + fmtKm(b.dist) + ": " + fmtClock(b.time * 1000) + " (" + fmtPace(b.pace) + "/km)"));
     }
     return lines.join("\n");
   }
   function renderRunDone() {
-    const r = ui.lastRun, route = ui.lastRoute && ui.lastRoute.id === r.date ? ui.lastRoute : null;
+    const r = ui.lastRun, route = ui.lastRoute && ui.lastRoute.id === r.date ? ui.lastRoute : null, past = ui.doneFrom === "runs";
     document.body.setAttribute("data-phase", "done");
     // with a route, each rep or km is a button that shows that stretch on the map
     const tap = (key, inner, cls) => route ? '<button type="button" class="hl-btn' + (cls ? " " + cls : "") + '" data-act="hl" data-hl="' + key + '" aria-pressed="' + (ui.hl === key) + '">' + inner + "</button>" : (cls ? "<div>" + inner + "</div>" : inner);
-    let h = '<section class="view done" aria-labelledby="doneTitle"><h1 class="done-title" id="doneTitle">' + (r.complete ? "Done." : "Saved.") + "</h1>";
-    h += '<p class="done-meta">Week ' + r.w + " · " + esc(r.title) + "</p>";
+    let h = '<section class="view done" aria-labelledby="doneTitle">' + (past ? '<button type="button" class="link-btn back" data-act="back-runs">‹ Runs</button>' : "") +
+      '<h1 class="done-title" id="doneTitle">' + (r.complete ? "Done." : "Saved.") + "</h1>";
+    h += '<p class="done-meta">' + (past ? esc(fmtDay(r.date)) + " · " : "") + "Week " + r.w + " · " + esc(r.title) + "</p>";
     let stats = "", detail = "";
     if (runKind(r) === "intervals") {
-      let t = 0, d = 0; r.reps.forEach((x) => { if (x.dist >= 50) { t += x.time; d += x.dist; } });
-      stats = "<p>" + fmtClock(r.dur * 1000) + " · " + esc(fmtDist(r.dist)) + (d ? " · average interval pace <strong>" + fmtPace(t / (d / 1000)) + "/km</strong>, target " + fmtPace(ZONES[r.zone].target) + "/km" : "") + "</p>";
+      let t = 0, d = 0; repsOf(r).forEach((x) => { if (x.dist >= 50) { t += x.time; d += x.dist; } });
+      const z = ZONES[r.zone];
+      stats = "<p>" + fmtClock(r.dur * 1000) + " · " + esc(fmtDist(r.dist)) + (d ? " · average interval pace <strong>" + fmtPace(t / (d / 1000)) + "/km</strong>" + (z ? ", target " + fmtPace(z.target) + "/km" : "") : "") + "</p>";
       detail = '<ul class="reps">';
-      r.reps.forEach((x) => {
+      repsOf(r).forEach((x) => {
         detail += "<li>" + tap("rep:" + x.n, '<span class="rep-main"><span>Interval ' + x.n + (x.skipped ? " (skipped)" : x.onTime ? " (ended on time)" : "") + "</span><span>" + esc(fmtDist(x.dist)) + " · " + fmtClock(x.time * 1000) + " · " + fmtPace(x.pace) + "/km</span></span>" +
-          (x.splits.length ? '<span class="rep-splits">250 m splits: ' + x.splits.map(fmtPace).join(", ") + "</span>" : "")) + "</li>";
+          (splitsOf(x).length ? '<span class="rep-splits">250 m splits: ' + splitsOf(x).map(fmtPace).join(", ") + "</span>" : "")) + "</li>";
       });
       detail += "</ul>";
     } else {
       stats = "<p><strong>" + esc(fmtDist(r.dist)) + "</strong> in <strong>" + fmtClock(r.dur * 1000) + "</strong> · average <strong>" + fmtPace(r.avg) + "/km</strong></p>";
-      if (r.kms.length) detail += '<div class="km-grid">' + r.kms.map((s, i) => tap("km:" + i, "<span>Km " + (i + 1) + "</span><b>" + fmtPace(s) + "</b>", "km")).join("") + "</div>";
-      if (r.blocks.length) { detail += '<ul class="summary">'; r.blocks.forEach((b) => { detail += "<li><span>" + esc(b.label) + " · " + fmtKm(b.dist) + "</span><span>" + fmtClock(b.time * 1000) + " · " + fmtPace(b.pace) + "/km</span></li>"; }); detail += "</ul>"; }
+      if (kmsOf(r).length) detail += '<div class="km-grid">' + kmsOf(r).map((s, i) => tap("km:" + i, "<span>Km " + (i + 1) + "</span><b>" + fmtPace(s) + "</b>", "km")).join("") + "</div>";
+      if (blocksOf(r).length) { detail += '<ul class="summary">'; blocksOf(r).forEach((b) => { detail += "<li><span>" + esc(b.label) + " · " + fmtKm(b.dist) + "</span><span>" + fmtClock(b.time * 1000) + " · " + fmtPace(b.pace) + "/km</span></li>"; }); detail += "</ul>"; }
     }
     h += stats;
     if (route) {
@@ -2922,9 +2973,11 @@ void main(){
     h += detail;
     h += '<div class="done-actions"><button type="button" class="btn" data-act="copy-run">Copy summary</button>';
     if (ui.copyText) h += '<textarea class="copy-box" id="copyBox" readonly>' + esc(ui.copyText) + "</textarea>";
-    if (route) h += '<button type="button" class="btn" data-act="gpx">Save route as GPX</button><p class="gpx-msg" id="gpxMsg" role="status"></p>' +
+    if (route) h += '<button type="button" class="btn" data-act="gpx">Save route as GPX</button><p class="gpx-msg" id="gpxMsg" role="status">' + esc(ui.gpxMsg || "") + "</p>" +
+      '<div class="gpx-out" id="gpxOut">' + gpxOutHtml() + "</div>" +
       '<label class="check"><input type="checkbox" id="gpxTrim"' + (RT.trim ? " checked" : "") + "><span>Leave out the first and last 200 m of the GPX file, so it doesn't show where you started and finished</span></label>";
-    h += '</div><div class="sticky-bar"><button type="button" class="btn primary wide" data-act="home">Back to home</button></div></section>';
+    h += '</div><div class="sticky-bar">' + (past ? '<button type="button" class="btn primary wide" data-act="back-runs">Back to runs</button><button type="button" class="link-btn" data-act="home" style="width:100%">Back to home</button>'
+      : '<button type="button" class="btn primary wide" data-act="home">Back to home</button>') + "</div></section>";
     app.innerHTML = h;
     if (route) mountRouteMap(route);
   }
@@ -2933,9 +2986,16 @@ void main(){
   // Route map (v2): MapLibre with OpenFreeMap street tiles (free, no key), loaded only on this screen.
   // The route is drawn as plain lines first, so there is always something to see without signal.
   // =====================================================================
+  // MapLibre 5.24.0 is a published release (April 2026). Stay on 5.x: version 6 dropped the plain <script> build this page uses.
+  // jsDelivr first, the same files from unpkg if jsDelivr can't be reached.
   const ML_VER = "5.24.0";
-  const ML_JS = "https://cdn.jsdelivr.net/npm/maplibre-gl@" + ML_VER + "/dist/maplibre-gl.js";
-  const ML_CSS = "https://cdn.jsdelivr.net/npm/maplibre-gl@" + ML_VER + "/dist/maplibre-gl.css";
+  const ML_SRC = [
+    { host: "jsDelivr", js: "https://cdn.jsdelivr.net/npm/maplibre-gl@" + ML_VER + "/dist/maplibre-gl.js", css: "https://cdn.jsdelivr.net/npm/maplibre-gl@" + ML_VER + "/dist/maplibre-gl.css" },
+    { host: "unpkg", js: "https://unpkg.com/maplibre-gl@" + ML_VER + "/dist/maplibre-gl.js", css: "https://unpkg.com/maplibre-gl@" + ML_VER + "/dist/maplibre-gl.css" }
+  ];
+  // OpenFreeMap styles: positron (light) and dark. If the dark one won't load, the light one is used instead.
+  const MAP_STYLE = (name) => "https://tiles.openfreemap.org/styles/" + name;
+  const ML_LIB_WAIT = 30000, MAP_STYLE_WAIT = 20000, MAP_TILES_WAIT = 45000;
   const RT_COL = { on: "#2340F0", fast: "#F2A20C", slow: "#EC5A44", jog: "#8B91A3" };
   const RT_W = { on: 5, fast: 5, slow: 5, jog: 3 };
   const RT_LABEL = { on: "On pace", fast: "Too fast", slow: "Too slow", jog: "Warm-up and rest" };
@@ -3081,7 +3141,7 @@ void main(){
     if (!MV.el) {
       MV.el = document.createElement("div");
       MV.el.className = "route-inner";
-      MV.el.innerHTML = routeSvg(g) + '<div class="route-gl"></div>';
+      MV.el.innerHTML = routeSvg(g) + '<div class="route-gl" style="position:absolute;top:0;right:0;bottom:0;left:0"></div>';
     }
     slot.appendChild(MV.el);
     if (MV.map) { try { MV.map.resize(); } catch (e) {} }
@@ -3091,77 +3151,123 @@ void main(){
   function mapReset() {
     clearTimeout(MV.timer);
     if (MV.map) { try { MV.map.remove(); } catch (e) {} }
-    MV.id = null; MV.geo = null; MV.el = null; MV.map = null; MV.state = "idle"; MV.note = "";
+    MV.id = null; MV.geo = null; MV.el = null; MV.map = null; MV.state = "idle"; MV.note = ""; MV.style = null; MV.styleNote = ""; MV.why = null;
   }
   function routeNote(html) {
     MV.note = html || "";
     const el = $("routeNote");
     if (el) { el.innerHTML = MV.note; el.hidden = !MV.note; }
   }
+  // Loads the map program, from jsDelivr and then unpkg if that fails. Rejects with what went wrong at each.
   let mlPromise = null;
-  function loadMapLib() {
-    if (window.maplibregl) return Promise.resolve(window.maplibregl);
-    if (mlPromise) return mlPromise;
-    mlPromise = new Promise((resolve, reject) => {
-      if (!document.querySelector('link[data-ml]')) {
+  const mlReady = () => !!(window.maplibregl && window.maplibregl.Map);
+  function loadMapFrom(src) {
+    return new Promise((resolve, reject) => {
+      if (!document.querySelector('link[data-ml="' + src.host + '"]')) {
         const css = document.createElement("link");
-        css.rel = "stylesheet"; css.href = ML_CSS; css.setAttribute("data-ml", "");
+        css.rel = "stylesheet"; css.href = src.css; css.setAttribute("data-ml", src.host);
         document.head.appendChild(css);
       }
       const sc = document.createElement("script");
-      const fail = () => { mlPromise = null; sc.remove(); reject(new Error("map library")); };
-      const to = setTimeout(fail, 20000);
-      sc.src = ML_JS; sc.async = true; sc.crossOrigin = "anonymous";
-      sc.onload = () => { clearTimeout(to); if (window.maplibregl) resolve(window.maplibregl); else fail(); };
-      sc.onerror = () => { clearTimeout(to); fail(); };
+      let over = false;
+      const fail = (why) => { if (over) return; over = true; clearTimeout(to); sc.remove(); reject(new Error(src.host + ": " + why)); };
+      const to = setTimeout(() => fail("no answer in " + ML_LIB_WAIT / 1000 + " s"), ML_LIB_WAIT);
+      sc.src = src.js; sc.async = true; sc.crossOrigin = "anonymous";
+      sc.onload = () => { if (over) return; if (mlReady()) { over = true; clearTimeout(to); resolve(window.maplibregl); } else fail("file loaded but it has no map in it"); };
+      sc.onerror = () => fail("download failed");
       document.head.appendChild(sc);
+    });
+  }
+  function loadMapLib() {
+    if (mlReady()) return Promise.resolve(window.maplibregl);
+    if (mlPromise) return mlPromise;
+    const errs = [];
+    mlPromise = ML_SRC.reduce((p, src) => p.catch((e) => {
+      if (e) errs.push(e.message);
+      return mlReady() ? window.maplibregl : loadMapFrom(src);
+    }), Promise.reject(null)).catch((e) => {
+      if (e) errs.push(e.message);
+      mlPromise = null;
+      throw new Error(errs.join("; "));
     });
     return mlPromise;
   }
   function mapLoad() {
     if (!MV.geo || MV.state === "loading" || MV.state === "ready") return;
-    if (navigator.onLine === false) { mapFail(); return; }
-    MV.state = "loading";
+    if (navigator.onLine === false) { mapFail("offline"); return; }
+    MV.state = "loading"; MV.styleNote = "";
     routeNote("<span>Loading the street map…</span>");
     const id = MV.id;
     loadMapLib().then((ml) => {
-      if (MV.id !== id || !MV.el) return;
-      const box = MV.el.querySelector(".route-gl");
-      let map, styleOk = false;
-      try {
-        map = new ml.Map({
-          container: box, style: "https://tiles.openfreemap.org/styles/" + (isDark() ? "dark" : "positron"),
-          bounds: MV.geo.bounds, fitBoundsOptions: { padding: 32, maxZoom: 16 },
-          cooperativeGestures: true, dragRotate: false, pitchWithRotate: false, touchPitch: false, attributionControl: { compact: true }
-        });
-      } catch (e) { mapFail(); return; }
-      MV.map = map;
-      try { map.touchZoomRotate.disableRotation(); } catch (e) {}
-      clearTimeout(MV.timer);
-      MV.timer = setTimeout(() => { if (MV.map === map && MV.state !== "ready") mapFail(); }, 25000);
-      map.on("styledata", () => { styleOk = true; });
-      map.on("error", () => { if (MV.map === map && MV.state === "loading" && !styleOk) mapFail(); });
-      map.on("load", () => {
-        if (MV.map !== map) return;
-        clearTimeout(MV.timer);
-        try { mapAddRoute(map, ml); } catch (e) { mapFail(); return; }
-        MV.state = "ready";
-        MV.el.classList.add("gl-on");
-        routeNote("");
-        paintHl(false);
-      });
-    }, () => { if (MV.id === id) mapFail(); });
+      if (MV.id !== id || !MV.el || MV.state !== "loading") return;
+      mapStart(ml, isDark() ? "dark" : "positron");
+    }, (e) => { if (MV.id === id && MV.state === "loading") mapFail(navigator.onLine === false ? "offline" : "lib", e && e.message); });
   }
-  function mapFail() {
+  function mapStart(ml, styleName) {
+    const box = MV.el && MV.el.querySelector(".route-gl");
+    if (!box) return;
+    if (MV.map) { try { MV.map.remove(); } catch (e) {} MV.map = null; }
+    box.innerHTML = "";
+    MV.style = styleName;
+    let map, styleOk = false;
+    try {
+      map = new ml.Map({
+        container: box, style: MAP_STYLE(styleName),
+        bounds: MV.geo.bounds, fitBoundsOptions: { padding: 32, maxZoom: 16 },
+        cooperativeGestures: true, dragRotate: false, pitchWithRotate: false, touchPitch: false, attributionControl: { compact: true }
+      });
+    } catch (e) { const m = String((e && e.message) || e || ""); mapFail(/webgl/i.test(m) ? "webgl" : "start", m); return; }
+    MV.map = map;
+    try { map.touchZoomRotate.disableRotation(); } catch (e) {}
+    const wait = (ms, kind) => { clearTimeout(MV.timer); MV.timer = setTimeout(() => { if (MV.map === map && MV.state === "loading") mapFail(kind); }, ms); };
+    wait(MAP_STYLE_WAIT, "styleSlow");
+    map.on("styledata", () => { if (styleOk) return; styleOk = true; if (MV.map === map && MV.state === "loading") wait(MAP_TILES_WAIT, "slow"); });
+    map.on("error", (ev) => {
+      // Once the style is in, a missing tile, icon or font doesn't stop the map
+      if (MV.map !== map || MV.state !== "loading" || styleOk) return;
+      const er = (ev && ev.error) || {}, st = er.status, msg = String(er.message || "");
+      if (navigator.onLine === false) { mapFail("offline"); return; }
+      if (/webgl/i.test(msg)) { mapFail("webgl", msg); return; }
+      if (styleName !== "positron") {
+        MV.styleNote = "The dark street map didn't load (" + (st ? "error " + st : msg || "no answer") + "), so the light one is shown.";
+        setTimeout(() => { if (MV.map === map && MV.state === "loading") mapStart(ml, "positron"); }, 0);
+        return;
+      }
+      mapFail("style", (st ? "error " + st : "") + (st && msg ? ": " : "") + (msg || (st ? "" : "no answer")));
+    });
+    map.on("load", () => {
+      if (MV.map !== map || MV.state !== "loading") return;
+      clearTimeout(MV.timer);
+      try { mapAddRoute(map, ml); } catch (e) { mapFail("start", e && e.message); return; }
+      MV.state = "ready";
+      MV.el.classList.add("gl-on");
+      routeNote(MV.styleNote ? "<span>" + esc(MV.styleNote) + "</span>" : "");
+      paintHl(false);
+      try { map.resize(); } catch (e) {}
+    });
+  }
+  // What the note under the map says when the street map can't be shown
+  const MAP_WHY = {
+    offline: "No signal right now, so the street map can't load.",
+    lib: "The map program (MapLibre " + ML_VER + ") couldn't be downloaded from jsDelivr or unpkg.",
+    webgl: "This browser couldn't start the map graphics (WebGL).",
+    start: "The street map couldn't start.",
+    style: "OpenFreeMap didn't send the street map style.",
+    styleSlow: "OpenFreeMap didn't send the street map style within " + MAP_STYLE_WAIT / 1000 + " seconds.",
+    slow: "The street map was still loading after " + MAP_TILES_WAIT / 1000 + " seconds, so it was stopped. The signal may be weak."
+  };
+  function mapFail(kind, detail) {
     clearTimeout(MV.timer);
     if (MV.map) { try { MV.map.remove(); } catch (e) {} MV.map = null; }
     if (MV.el) { MV.el.classList.remove("gl-on"); const box = MV.el.querySelector(".route-gl"); if (box) box.innerHTML = ""; }
-    MV.state = "failed";
-    routeNote('<span>No street map without signal. Your route is drawn on its own.</span><button type="button" class="link-btn" data-act="map-retry">Try again</button>');
+    MV.state = "failed"; MV.why = kind || "start";
+    const base = MAP_WHY[kind] || MAP_WHY.start, why = detail ? base.replace(/\.$/, "") + " (" + String(detail).slice(0, 200) + ")." : base;
+    if (TEST) console.log("[map] failed: " + why);
+    routeNote("<span>" + esc(why) + ' Your route is drawn on its own.</span><button type="button" class="link-btn" data-act="map-retry">Try again</button>');
   }
   window.addEventListener("online", () => { if (MV.state === "failed" && $("routeMap")) mapLoad(); });
   function mapAddRoute(map, ml) {
-    const g = MV.geo, dark = isDark(), cap = { "line-cap": "round", "line-join": "round" };
+    const g = MV.geo, dark = MV.style === "dark", cap = { "line-cap": "round", "line-join": "round" };
     map.addSource("rt-hl", { type: "geojson", data: { type: "FeatureCollection", features: [] } });
     map.addSource("rt-gap", { type: "geojson", data: g.gaps });
     map.addSource("rt", { type: "geojson", data: g.lines });
@@ -3213,29 +3319,55 @@ void main(){
     });
     return out + "</trk>\n</gpx>\n";
   }
-  function exportGpx(btn) {
-    const route = ui.lastRoute, msg = $("gpxMsg");
+  // The GPX file only ever goes to the iPhone share sheet (Save to Files, AirDrop, other apps). The page never opens or
+  // downloads the file itself, because on iPhone that replaced the whole app with the file. If a file can't be shared,
+  // the GPX text is shown in a box to copy instead. Either way the finish screen stays as it is.
+  function gpxOutHtml() {
+    const o = ui.gpx;
+    if (!o || !ui.lastRoute || o.id !== ui.lastRoute.id) return "";
+    return '<p class="fine">' + esc(o.why) + '</p><textarea class="copy-box" id="gpxBox" readonly aria-label="GPX text of your route">' + esc(o.text) + "</textarea>" +
+      '<button type="button" class="btn" data-act="gpx-copy">Copy GPX text</button>';
+  }
+  function gpxSay(t) { ui.gpxMsg = t || ""; const m = $("gpxMsg"); if (m) m.textContent = ui.gpxMsg; }
+  function gpxPaintOut() { const out = $("gpxOut"); if (out) out.innerHTML = gpxOutHtml(); }
+  function gpxShowText(xml, why) {
+    ui.gpx = { id: ui.lastRoute.id, text: xml, why: why };
+    gpxSay("");
+    gpxPaintOut();
+  }
+  function exportGpx() {
+    const route = ui.lastRoute;
     if (!route) return;
-    const say2 = (t) => { if (msg) msg.textContent = t; };
+    ui.gpx = null; gpxPaintOut();
     const xml = routeGpx(route, RT.trim);
-    if (!xml) { say2("This run is too short to save with the first and last 200 m left out. Untick the box to save all of it."); return; }
-    const name = "sub41-" + route.id.slice(0, 10) + "-" + (route.kind || "run") + ".gpx";
-    const download = () => {
-      try {
-        const url = URL.createObjectURL(new Blob([xml], { type: "application/gpx+xml" })), a = document.createElement("a");
-        a.href = url; a.download = name; document.body.appendChild(a); a.click(); a.remove();
-        setTimeout(() => URL.revokeObjectURL(url), 60000);
-        say2("GPX file downloaded: " + name);
-      } catch (e) { say2("Couldn't save the file on this phone."); }
-    };
+    if (!xml) { gpxSay("This run is too short to save with the first and last 200 m left out. Untick the box to save all of it."); return; }
+    const name = "sub41-" + route.id.slice(0, 10) + "-" + (route.kind || "run") + ".gpx", rid = route.id;
+    const here = () => ui.view === "runDone" && ui.lastRoute && ui.lastRoute.id === rid;
+    const paste = ", so here is the GPX text. Copy it, then paste it into a new file called " + name + ".";
     let file = null;
     if (navigator.share && navigator.canShare) {
-      for (const type of ["application/gpx+xml", "application/xml", "text/xml"]) {
+      for (const type of ["application/gpx+xml", "application/xml", "text/xml", "application/octet-stream", "text/plain"]) {
         try { const f = new File([xml], name, { type: type }); if (navigator.canShare({ files: [f] })) { file = f; break; } } catch (e) {}
       }
     }
-    if (!file) { download(); return; }
-    navigator.share({ files: [file], title: route.title }).then(() => say2("Route shared: " + name), (e) => { if (!e || e.name !== "AbortError") download(); });
+    if (!file) { gpxShowText(xml, "This browser can't share a file" + paste); return; }
+    gpxSay("Opening the share sheet…");
+    let p;
+    try { p = navigator.share({ files: [file] }); } catch (e) { p = Promise.reject(e); }
+    Promise.resolve(p).then(() => { if (here()) gpxSay("Route shared: " + name); }, (e) => {
+      if (!here()) return;
+      if (e && e.name === "AbortError") { gpxSay("Sharing cancelled. Your run is still here."); return; }
+      gpxShowText(xml, "Sharing didn't work" + (e && e.name ? " (" + e.name + ")" : "") + paste);
+    });
+  }
+  function copyGpx(b) {
+    const text = ui.gpx && ui.gpx.text, box = $("gpxBox");
+    if (!text) return;
+    const pick = () => {
+      if (box) { try { box.focus({ preventScroll: true }); } catch (e) { box.focus(); } try { box.setSelectionRange(0, text.length); } catch (e) { box.select(); } }
+      gpxSay("The text is selected. Tap Copy to copy it.");
+    };
+    try { navigator.clipboard.writeText(text).then(() => { b.textContent = "Copied"; gpxSay("GPX text copied."); }, pick); } catch (e) { pick(); }
   }
 
   // ----- Strength setup -----
@@ -3473,7 +3605,10 @@ void main(){
     unlockAudio();
     const act = b.getAttribute("data-act");
     switch (act) {
-      case "home": if (!R) stopGps(); ui.view = "home"; ui.lastRun = null; ui.lastLift = null; ui.copyText = null; ui.lastRoute = null; ui.hl = null; mapReset(); render(); app.scrollTop = 0; break;
+      case "home": if (!R) stopGps(); ui.view = "home"; ui.lastRun = null; ui.lastLift = null; ui.copyText = null; ui.lastRoute = null; ui.hl = null; ui.gpx = null; ui.gpxMsg = ""; ui.doneFrom = null; mapReset(); render(); app.scrollTop = 0; break;
+      case "open-run": openRun(b.getAttribute("data-id"), "runs"); break;
+      case "back-runs": backToRuns(); break;
+      case "gpx-copy": copyGpx(b); break;
       case "go-run": {
         ui.view = "runSetup"; ui.rKind = b.getAttribute("data-k") || null; ui.rVar = b.getAttribute("data-v") || null;
         ui.rWeek = b.getAttribute("data-w") ? +b.getAttribute("data-w") : null; ui.lastLift = null; ui.copyText = null;
@@ -3496,7 +3631,7 @@ void main(){
       case "lock": setLock(true); break;
       case "copy-run": copyText(runSummaryText(ui.lastRun), b); break;
       case "hl": setHl(b.getAttribute("data-hl")); break;
-      case "gpx": exportGpx(b); break;
+      case "gpx": exportGpx(); break;
       case "map-retry": if (MV.state === "failed") mapLoad(); break;
       // strength
       case "stype": ui.sType = b.getAttribute("data-type"); ui.preview = null; render(); break;
@@ -3533,7 +3668,10 @@ void main(){
   app.addEventListener("change", (e) => {
     if (e.target.id === "rWeekSel") { const v = +e.target.value; ui.rWeek = v === Math.min(planWeek(), 10) ? null : v; render(); }
     if (e.target.id === "sWeekSel") { const v = +e.target.value; ui.sWeek = v === planWeek() ? null : v; ui.preview = null; render(); }
-    if (e.target.id === "gpxTrim") { RT.trim = !!e.target.checked; rtStore(); const m = $("gpxMsg"); if (m) m.textContent = ""; }
+    if (e.target.id === "gpxTrim") {
+      RT.trim = !!e.target.checked; rtStore(); gpxSay("");
+      if (ui.gpx && ui.lastRoute) { const x = routeGpx(ui.lastRoute, RT.trim); if (x) ui.gpx.text = x; else ui.gpx = null; gpxPaintOut(); }
+    }
   });
   app.addEventListener("input", (e) => {
     if (e.target.id === "kgInput" && C && SETS[C.k]) {
@@ -3555,9 +3693,15 @@ void main(){
     if (C && ui.view === "lift") { wakeCheck(); sTick(); }
   });
   window.addEventListener("hashchange", render);
-  if (TEST) window.__v2 = { rtEncode: rtEncode, rtDecode: rtDecode, rtSimplify: rtSimplify, rtUnpack: rtUnpack, routeGeo: routeGeo, routeGpx: routeGpx, ui: ui, MV: MV, RT: () => RT };
+  if (TEST) window.__v2 = { rtEncode: rtEncode, rtDecode: rtDecode, rtSimplify: rtSimplify, rtUnpack: rtUnpack, routeGeo: routeGeo, routeGpx: routeGpx, ui: ui, MV: MV, RT: () => RT, RS: () => RS, openRun: openRun };
 
-  render();
+  // Back on the finish screen that was open if the page was reloaded (see OPEN_KEY)
+  let reopened = false;
+  try {
+    const o = JSON.parse(sessionStorage.getItem(OPEN_KEY) || "null");
+    if (o && o.id && Date.now() - o.at < 30 * 60000 && !C && location.hash !== "#figures") reopened = openRun(o.id, o.from === "runs" ? "runs" : "finish");
+  } catch (e) {}
+  if (!reopened) render();
   requestAnimationFrame(animate);
 })();
 </script>
