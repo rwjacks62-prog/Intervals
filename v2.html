@@ -378,6 +378,8 @@ body.locked .controls, body.locked .gps-line { visibility: hidden; }
 body[data-phase="work"] .swap { color: var(--fg); }
 .warm-list { margin: 0; padding: 0; list-style: none; display: flex; flex-direction: column; gap: 0.5rem; }
 .warm-list li { padding: 0.8rem 1rem; background: var(--panel); border-radius: 0.75rem; font-weight: 600; }
+.warm-list li.now { background: var(--fg); color: var(--bg); }
+.warm-list li.past { opacity: 0.5; }
 
 /* Touch lock */
 .lock { position: fixed; inset: 0; z-index: 50; display: flex; align-items: flex-end; justify-content: center; padding: 0 max(16px, env(safe-area-inset-right, 0px)) calc(env(safe-area-inset-bottom, 0px) + 1rem) max(16px, env(safe-area-inset-left, 0px)); -webkit-user-select: none; user-select: none; -webkit-touch-callout: none; touch-action: none; }
@@ -524,7 +526,11 @@ const AV3D = (() => {
     split: { grip: "fwd", out: 0.03 }, row1: { grip: "fwd", out: 0.02, absZ: 0.07 }, rdl: { grip: "lat", out: 0 },
     bench: { grip: "lat", out: 0.05 }, plank: { side: true, lift: 0.16 }, calf: { grip: "fwd", out: 0.03 },
     step: { grip: "fwd", out: 0.03 }, incline: { grip: "lat", out: 0.05 }, slrdl: { grip: "fwd", out: 0.01 },
-    row2: { grip: "fwd", out: 0.0 }, thrust: { dbHips: true }, march: { grip: "fwd", out: 0.03 }
+    row2: { grip: "fwd", out: 0.0 }, thrust: { dbHips: true }, march: { grip: "fwd", out: 0.03 },
+    // added with the 2026 programme. out as [start, end] moves the hands sideways during the rep; sup = palms forward;
+    // twoHand = both hands on one dumbbell
+    lat: { grip: "fwd", out: [0.07, 0.56] }, curl: { grip: "sup", out: 0.05 }, tri: { grip: "fwd", out: -0.13, twoHand: true },
+    deadbug: { grip: "fwd", out: 0.02 }, birddog: { grip: "fwd", out: 0.0 }
   };
   function setAnim(a) { ANIM = Object.assign({}, a, { stand: ANIM.stand }); frames.clear(); }
 
@@ -598,7 +604,11 @@ const AV3D = (() => {
       let T, apole, to = ap.to;
       if (X.dbHips) to = "dbh";
       else if (X.side && ap.to === "abs") to = "fore";
-      if (to === "sh") { T = add(add(sj, tp), mul(l, sg * (X.out || 0) * S.out)); apole = add(pole2D(sj, T, ap.b), mul(l, sg * 0.25)); }
+      const outv = Array.isArray(X.out) ? lerp(X.out[0], X.out[1], k) : (X.out || 0);
+      if (to === "sh") {
+        T = add(add(sj, tp), mul(l, sg * outv * S.out));
+        // arc: the hand swings at a set share of the arm's length from the shoulder, so the arm stays long all through the rep
+        if (A.arc) T = add(sj, mul(norm(sub(T, sj)), 0.61 * sc * A.arc)); apole = add(pole2D(sj, T, ap.b), mul(l, sg * 0.25)); }
       else if (to === "hip") { T = X.side ? sum(hipC, mul(l, S.hipW + 0.1), mul(u, 0.03), mul(f, 0.03)) : add(add(hipC, tp), mul(l, sg * (S.hipW + 0.075))); apole = X.side ? add(mul(f, -1), mul(l, 0.6)) : add(pole2D(sj, T, ap.b), mul(l, sg * 0.25)); }
       else if (to === "fore") { T = [sj[0] + 0.02, 0.035, sj[2] + 0.28 * sc]; apole = [0, -1, -0.15]; }
       else if (to === "dbh") { const dbc = sum(hipC, mul(f, 0.16 * sc), mul(u, 0.03)); T = sum(dbc, mul(l, sg * 0.092), mul(f, 0.035)); apole = add(mul(l, sg), mul(u, 0.4)); if (sg > 0) sk.props.push({ t: "db", c: dbc, ax: l }); }
@@ -606,16 +616,21 @@ const AV3D = (() => {
       const uaL = 0.296 * sc, faL = 0.314 * sc;
       const armIK = ik3(sj, T, uaL, faL, apole);
       const fdir = norm(sub(armIK.end, armIK.mid));
-      const holding = !X.dbHips && (A.db || []).includes(side);
-      let tref = to === "fore" ? u : (to === "abs" || to === "dbh" || X.grip === "lat") ? mul(l, -sg) : f;
+      const holding = !X.dbHips && (X.twoHand || (A.db || []).includes(side));
+      let tref = to === "fore" ? u : X.grip === "sup" ? mul(l, sg) : (to === "abs" || to === "dbh" || X.grip === "lat") ? mul(l, -sg) : f;
       let thumb = sub(tref, mul(fdir, dot(tref, fdir)));
       if (len(thumb) < 0.25) { tref = Math.abs(dot(u, fdir)) < 0.9 ? u : [0, 1, 0]; thumb = sub(tref, mul(fdir, dot(tref, fdir))); }
       thumb = norm(thumb);
       const palm = mul(norm(cross(thumb, fdir)), sg);
       sk.arms.push({ sh: sj, elb: armIK.mid, grip: armIK.end, wrist: sub(armIK.end, mul(fdir, 0.068 * sc)), fdir: fdir, pole: armIK.pole,
                      thumb: thumb, palm: palm, holding: holding, sg: sg, side: side });
-      if (holding) sk.props.push({ t: "db", c: armIK.end, ax: thumb });
+      if (holding && !X.twoHand) sk.props.push({ t: "db", c: armIK.end, ax: thumb });
     });
+    if (X.twoHand) {
+      // one dumbbell held by both hands under its top end, hanging straight down
+      const a0 = sk.arms[0], a1 = sk.arms[1];
+      sk.props.push({ t: "db", c: add(mix(a0.grip, a1.grip, 0.5), [0, -0.085, 0]), ax: [0, 1, 0] });
+    }
     (A.bench || []).forEach((b) => {
       if (b[0] === "r") sk.props.push({ t: "pad", a: M([b[1], b[2] + b[4] / 2], 0), b: M([b[1] + b[3], b[2] + b[4] / 2], 0), h: b[4] / 2 * s });
       else sk.props.push({ t: b[5] >= 8 ? "padline" : "leg", a: M([b[1], b[2]], 0), b: M([b[3], b[4]], 0), w: b[5] * s });
@@ -1278,34 +1293,47 @@ void main(){
     return WARMUP + p.reps * work + (p.reps - 1) * p.rest + COOLDOWN;
   }
 
-  // Strength
-  const STEP = 2, RESTS = [45, 60, 75, 90], READY = 15, CHANGE = 20, GO = 5, GAP = 5, PAIRS = "ABC";
+  // Strength (programme approved 16 Nov 2026: two 30-minute sessions; see claude/strength-programme.md)
+  // Each move: reps = bottom of the range, max = top. rir = reps to keep in reserve. Double progression: top of the range on every set, then +2 kg.
+  // Moves from the earlier programme stay in EX (old: true) so sessions logged with them still show their names.
+  const STEP = 2, READY = 15, CHANGE = 20, GO = 5, GAP = 5, WARM_SECS = 45, PAIRS = "ABCD";
   const EX = {
-    "a-split":   { name: "Rear-foot elevated split squat", say: "split squat", cue: "Back foot on the bench", reps: 8, per: "leg", load: "pair", legs: true, anim: "split", swap: "Hip at 4/10 or more? Do step-ups instead." },
-    "a-row":     { name: "Single-arm dumbbell row", say: "single-arm row", cue: "Free hand on the bench", reps: 10, per: "arm", load: "single", anim: "row1" },
-    "a-rdl":     { name: "Dumbbell Romanian deadlift", say: "Romanian deadlift", cue: "Push your hips back, soft knees", reps: 10, load: "pair", legs: true, anim: "rdl", swap: "Hip at 4/10 or more? Do hip thrusts instead." },
-    "a-bench":   { name: "Dumbbell bench press", say: "bench press", cue: "Flat bench, feet on the floor", reps: 8, max: 10, load: "pair", anim: "bench" },
-    "a-plank":   { name: "Side plank with top-leg lift", say: "side plank", cue: "Hips high, lift the top leg slowly", hold: 30, per: "side", load: "none", anim: "plank" },
-    "a-calf":    { name: "Single-leg calf raise", say: "calf raise", cue: "Hold a dumbbell, or set 0 for bodyweight", reps: 15, per: "leg", load: "single", legs: true, allowZero: true, anim: "calf" },
-    "b-step":    { name: "Step-up onto the bench", say: "step-up", cue: "Drive up, slow on the way down", reps: 8, per: "leg", load: "pair", legs: true, anim: "step" },
-    "b-incline": { name: "Incline dumbbell press", say: "incline press", cue: "Bench on an incline", reps: 10, load: "pair", anim: "incline" },
-    "b-slrdl":   { name: "Single-leg Romanian deadlift", say: "single-leg deadlift", cue: "Dumbbell in the hand opposite the standing leg", reps: 8, per: "leg", load: "single", legs: true, anim: "slrdl", swap: "Hip at 4/10 or more? Do marching glute bridges instead." },
-    "b-row":     { name: "Chest-supported row", say: "chest-supported row", cue: "Face down on the incline bench", reps: 10, max: 12, load: "pair", anim: "row2" },
-    "b-thrust":  { name: "Dumbbell hip thrust", say: "hip thrust", cue: "Shoulders on the bench, dumbbell on your hips", reps: 12, load: "single", legs: true, anim: "thrust" },
-    "b-march":   { name: "Suitcase march", say: "suitcase march", cue: "One heavy dumbbell, stand tall", hold: 30, per: "hand", load: "single", anim: "march" }
+    "b-step":    { name: "Step-up onto the bench", say: "step-up", cue: "Whole foot on the bench, drive up, slow on the way down", tempo: "1 s up, 2 s down", reps: 8, max: 10, rir: [3, 3], per: "leg", load: "pair", legs: true, anim: "step", swap: "Hip or back complaining? Do hip thrusts instead." },
+    "a-row":     { name: "Single-arm dumbbell row", say: "single-arm row", cue: "Free hand on the bench, pull your elbow to your hip", tempo: "1 s up, 2 s down", reps: 8, max: 12, rir: [1, 2], per: "arm", load: "single", anim: "row1", swap: "Back complaining? Do chest-supported rows instead." },
+    "n-lat":     { name: "Lateral raise", say: "lateral raise", cue: "Lead with the elbows, up to shoulder height", tempo: "1 s up, 2 s down", reps: 12, max: 20, rir: [0, 1], load: "pair", anim: "lat", swap: "Back complaining? Sit on the end of the bench." },
+    "n-curl":    { name: "Incline dumbbell curl", say: "incline curl", cue: "Bench at 45°, arms hang back, elbows still", tempo: "1 s up, 2 s down", reps: 10, max: 15, rir: [0, 1], load: "pair", anim: "curl" },
+    "n-deadbug": { name: "Dead bug", say: "dead bug", cue: "Lower back pressed into the floor; opposite arm and leg, alternate sides", tempo: "2 s out, 1 s back", reps: 10, alt: true, load: "none", anim: "deadbug" },
+    "a-plank":   { name: "Side plank with top-leg lift", say: "side plank", cue: "Hips high, lift the top leg slowly", tempo: "1 s up, 2 s down", hold: 30, per: "side", load: "none", anim: "plank", swap: "Hip complaining? Drop the leg lift." },
+    "b-slrdl":   { name: "Single-leg Romanian deadlift", say: "single-leg deadlift", cue: "Hips square, long back; dumbbell in the hand opposite the standing leg", tempo: "2 s down, 1 s up", reps: 8, max: 10, rir: [2, 3], per: "leg", load: "single", legs: true, anim: "slrdl", swap: "Hip or back complaining? Do hip thrusts instead." },
+    "a-bench":   { name: "Dumbbell bench press", say: "bench press", cue: "Flat bench, shoulder blades pinned, feet on the floor", tempo: "2 s down, 1 s up", reps: 8, max: 12, rir: [1, 2], load: "pair", anim: "bench" },
+    "b-incline": { name: "Incline dumbbell press", say: "incline press", cue: "Bench at 30 to 45°, press up over the collarbones", tempo: "2 s down, 1 s up", reps: 8, max: 12, rir: [1, 2], load: "pair", anim: "incline" },
+    "a-calf":    { name: "Single-leg calf raise", say: "calf raise", cue: "Hold a dumbbell, or set 0 for bodyweight; full rise, slow on the way down", tempo: "1 s up, 2 s down", reps: 8, max: 12, rir: [1, 2], per: "leg", load: "single", legs: true, allowZero: true, anim: "calf" },
+    "n-tri":     { name: "Overhead triceps extension", say: "overhead triceps extension", cue: "Bench upright, back on the pad; elbows up, lower deep behind your head", tempo: "2 s down, 1 s up", reps: 10, max: 15, rir: [0, 1], load: "single", anim: "tri" },
+    "n-birddog": { name: "Bird dog", say: "bird dog", cue: "Opposite arm and leg, hips level, reach long; alternate sides", tempo: "2 s out, 1 s back", reps: 10, alt: true, load: "none", anim: "birddog" },
+    "a-split":   { old: true, name: "Rear-foot elevated split squat", say: "split squat", cue: "Back foot on the bench", reps: 8, per: "leg", load: "pair", legs: true, anim: "split" },
+    "a-rdl":     { old: true, name: "Dumbbell Romanian deadlift", say: "Romanian deadlift", cue: "Push your hips back, soft knees", reps: 10, load: "pair", legs: true, anim: "rdl" },
+    "b-row":     { old: true, name: "Chest-supported row", say: "chest-supported row", cue: "Face down on the incline bench", reps: 10, max: 12, load: "pair", anim: "row2" },
+    "b-thrust":  { old: true, name: "Dumbbell hip thrust", say: "hip thrust", cue: "Shoulders on the bench, dumbbell on your hips", reps: 12, load: "single", legs: true, anim: "thrust" },
+    "b-march":   { old: true, name: "Suitcase march", say: "suitcase march", cue: "One heavy dumbbell, stand tall", hold: 30, per: "hand", load: "single", anim: "march" }
   };
+  // Session types stay "A" and "B" so sessions logged before the change still count for their week
   const SESSIONS = {
-    A: { name: "Strength A", day: "Monday", pairs: [["a-split", "a-row"], ["a-rdl", "a-bench"], ["a-plank", "a-calf"]] },
-    B: { name: "Strength B", day: "Thursday", pairs: [["b-step", "b-incline"], ["b-slrdl", "b-row"], ["b-thrust", "b-march"]] }
+    A: { name: "Strength 1", day: "Monday", focus: "Legs, shoulders, back, biceps, core",
+         pairs: [["b-step", "a-row"], ["n-lat", "n-curl"], ["n-deadbug", "a-plank"]], rest: [60, 45, 30],
+         kit: ["Flat bench", "Bench at 45°", "On the floor"],
+         warm: ["Glute bridge", "90/90 hip switches", "Cat-camel", "Arm circles"] },
+    B: { name: "Strength 2", day: "Thursday", focus: "Legs, chest, triceps, core",
+         pairs: [["b-slrdl", "a-bench"], ["b-incline", "a-calf"], ["n-tri", "n-deadbug"], ["n-birddog", "a-plank"]], rest: [45, 45, 30, 30],
+         kit: ["Flat bench", "Bench at 30 to 45°", "Bench upright, then the floor", "On the floor"],
+         warm: ["Glute bridge", "90/90 hip switches", "Easy push-ups", "Arm circles"] }
   };
-  const WARM_MOVES = ["Glute bridge × 12", "90/90 hip switches × 6 per side", "Dead bug × 6 per side"];
   const SWITCH = { leg: "Switch legs.", arm: "Switch arms.", side: "Switch sides.", hand: "Switch hands." };
 
   // The week
   function weekSchedule(w) {
     const ww = Math.min(Math.max(1, w), 10);
     if (ww === 10) return [
-      [{ t: "strength", s: "A", label: "Strength A, light" }, { t: "easy", v: "mon", label: easyPlan(10, "mon").title }],
+      [{ t: "strength", s: "A", label: "Strength 1, light" }, { t: "easy", v: "mon", label: easyPlan(10, "mon").title }],
       [{ t: "intervals", label: "Intervals: " + iTitle(intervalPlan(10)) }],
       [{ t: "note", label: "Rest. Skip padel this week" }],
       [{ t: "easy", v: "thu", label: easyPlan(10, "thu").title }],
@@ -1314,10 +1342,10 @@ void main(){
       [{ t: "note", label: "Rest" }]
     ];
     return [
-      [{ t: "strength", s: "A", label: "Strength A" }, { t: "easy", v: "mon", label: easyPlan(ww, "mon").title }],
+      [{ t: "strength", s: "A", label: "Strength 1" }, { t: "easy", v: "mon", label: easyPlan(ww, "mon").title }],
       [{ t: "intervals", label: "Intervals: " + iTitle(intervalPlan(ww)) }],
       [{ t: "note", label: "Padel" }],
-      [{ t: "strength", s: "B", label: "Strength B" }, { t: "easy", v: "thu", label: easyPlan(ww, "thu").title }],
+      [{ t: "strength", s: "B", label: "Strength 2" }, { t: "easy", v: "thu", label: easyPlan(ww, "thu").title }],
       [{ t: "note", label: "Rest" }],
       [{ t: "long", label: "Long run: " + longPlan(ww).title }],
       [{ t: "note", label: "Rest, plus the desk reset" }]
@@ -1408,7 +1436,7 @@ void main(){
     if (raw) {
       const d = JSON.parse(raw);
       if (d && typeof d === "object") {
-        if (RESTS.includes(+d.rest)) S.rest = +d.rest;
+        if (d.rest != null) S.rest = d.rest; // no longer used (rests are set per pair); kept as saved
         if (d.fig === "m" || d.fig === "f") S.fig = d.fig;
         if (Array.isArray(d.sessions)) S.sessions = d.sessions.filter((x) => x && SESSIONS[x.type] && Array.isArray(x.sets));
         if (d.current && SESSIONS[d.current.type] && Array.isArray(d.current.sets)) S.current = d.current;
@@ -2257,53 +2285,83 @@ void main(){
   // =====================================================================
   // Strength engine
   // =====================================================================
-  const setsFor = (pi, w) => (pi === 2 ? 2 : (isLight(w) || w === 10) ? 2 : 3);
+  // Rounds per pair: the first two pairs do 3 (2 in lighter weeks and race week); core pairs always do 2
+  const setsFor = (pi, w) => (pi >= 2 ? 2 : (isLight(w) || w === 10) ? 2 : 3);
   function buildSets(type, w) {
-    const out = [];
-    SESSIONS[type].pairs.forEach((pair, pi) => {
+    const out = [], Sx = SESSIONS[type];
+    Sx.pairs.forEach((pair, pi) => {
       const n = setsFor(pi, w);
-      for (let s = 1; s <= n; s++) pair.forEach((id, ei) => out.push({ ex: id, set: s, of: n, tag: PAIRS[pi] + (ei + 1), pos: ei }));
+      for (let s = 1; s <= n; s++) pair.forEach((id, ei) => out.push({ ex: id, set: s, of: n, tag: PAIRS[pi] + (ei + 1), pos: ei, rest: Sx.rest[pi] }));
     });
     return out;
   }
+  const sessName = (rec) => (rec.pv === 2 ? SESSIONS[rec.type].name : "Strength " + rec.type + " (old plan)");
   function loadLabel(ex) { return ex.load === "pair" ? "each hand" : ex.load === "single" ? "one dumbbell" : ""; }
   function doseText(ex) {
     if (ex.hold) return ex.hold + " s per " + ex.per;
+    if (ex.alt) return ex.reps + " alternating";
     return (ex.max ? ex.reps + "–" + ex.max : ex.reps) + (ex.per ? " per " + ex.per : " reps");
   }
+  // Reps to keep in reserve: one more in week 1 while finding weights; 3–4 in lighter weeks and race week
+  function rirText(ex, w) {
+    if (!ex.rir) return "";
+    if (isLight(w) || w === 10) return "3–4 in reserve";
+    const a = ex.rir[0] + (w === 1 ? 1 : 0), b = ex.rir[1] + (w === 1 ? 1 : 0);
+    return (a === b ? a : a + "–" + b) + " in reserve";
+  }
+  // Longest a session can take: warm-up, get ready, and every set run to the top of its range
+  function sessSecs(type, w) {
+    const Sx = SESSIONS[type];
+    let t = Sx.warm.length * WARM_SECS + READY;
+    Sx.pairs.forEach((pair, pi) => { t += setsFor(pi, w) * (setTotal(setPlan(pair[0])) + CHANGE + setTotal(setPlan(pair[1])) + Sx.rest[pi]); });
+    return t - Sx.rest[Sx.pairs.length - 1];
+  }
+  const sessMins = (type, w) => Math.round(sessSecs(type, w) / 60);
   function weekNote(w, t) {
-    if (w === 10 && t === "B") return "Race week has no Strength B. Do Strength A on Monday, then keep your legs fresh.";
-    if (w === 10) return "Race week: 2 sets of everything, legs about 20% lighter.";
-    if (isLight(w)) return "Lighter week: same weights as last week, 2 sets of the A and B pairs.";
-    if (w > 10) return "Plan complete. Lifts keep going up 2 kg a week.";
-    return "Build week: each lift goes up 2 kg on last week.";
+    if (w === 10 && t === "B") return "Race week has no Strength 2. Do Strength 1 on Monday, then keep your legs fresh.";
+    if (w === 10) return "Race week: 2 rounds of everything with 3–4 reps in reserve. Legs 20% lighter, upper body the same weight.";
+    if (isLight(w)) return "Lighter week: same weights, 2 rounds of every pair, 3–4 reps in reserve.";
+    if (w > 10) return "Plan complete. Same rule: hit the top of the range on every set, then add 2 kg.";
+    return (w === 1 ? "Week 1: finding your weights, so keep 1 more rep in reserve than usual. " : "") +
+      "Hit the top of the range on every set and the weight goes up 2 kg next time. Stopping short? Tap Stop set so the app knows." +
+      (w >= 8 ? " Leg weights stay the same from week 8." : "");
   }
-  function lastRecord(id, skipRace) {
-    const ss = S.sessions;
-    for (let i = ss.length - 1; i >= 0; i--) {
-      const s = ss[i];
-      if (skipRace && s.week === 10) continue;
-      let hit = null;
-      s.sets.forEach((x) => { if (x.ex === id && typeof x.kg === "number") hit = x; });
-      if (hit) return { kg: hit.kg, week: s.week };
+  // Every logged session with this move (newest first) and the sets done with a weight
+  function exHistory(id) {
+    const out = [];
+    for (let i = S.sessions.length - 1; i >= 0; i--) {
+      const s = S.sessions[i], xs = s.sets.filter((x) => x.ex === id && typeof x.kg === "number");
+      if (xs.length) out.push({ week: s.week, sets: xs, kg: xs[xs.length - 1].kg });
     }
-    return null;
+    return out;
   }
-  // +2 kg each new build week, held in lighter weeks, legs cut in race week
+  // Double progression with 2 kg jumps: top of the range on every set = +2 kg; under the bottom on the first set
+  // straight after an increase = back 2 kg; otherwise the same weight. Lighter weeks and race week never trigger a change
+  // (they use the last normal week's weight); race week takes 20% off the legs; leg weights hold from week 8.
+  const normalWeek = (wk) => !isLight(wk) && wk !== 10;
   function suggest(id, w) {
     const ex = EX[id];
     if (ex.load === "none") return { none: true, kg: null };
-    const last = lastRecord(id, true) || lastRecord(id, false);
-    if (!last) return { first: true, kg: null };
-    let kg = last.kg, why;
+    const hist = exHistory(id);
+    if (!hist.length) return { first: true, kg: null };
+    const iN = hist.findIndex((h) => normalWeek(h.week)), last = iN >= 0 ? hist[iN] : hist[0], base = last.kg;
+    const top = ex.max || ex.reps, bottom = ex.reps;
+    let kg = base, why;
     if (w === 10) {
-      if (ex.legs) { kg = Math.max(0, Math.floor(last.kg * 0.8 / STEP) * STEP); why = "Race week: lighter legs"; }
+      if (ex.legs) { kg = Math.max(0, Math.floor(base * 0.8 / STEP) * STEP); why = "Race week: legs 20% lighter"; }
       else why = "Race week: same weight";
-    } else if (last.kg === 0) { kg = 0; why = "Bodyweight last time; add weight with +"; }
-    else if (isLight(w)) why = "Lighter week: same weight";
-    else if (w > last.week) { kg = last.kg + STEP; why = "+2 kg on last week"; }
-    else why = "Same as last time";
-    return { kg: kg, delta: kg - last.kg, why: why, lastKg: last.kg, lastWeek: last.week };
+    } else if (isLight(w)) why = "Lighter week: same weight, fewer sets";
+    else if (iN < 0) why = "Same weight as last time";
+    else {
+      const allTop = last.sets.every((x) => x.reps != null && x.reps >= top);
+      const prev = hist.slice(iN + 1).find((h) => normalWeek(h.week));
+      const firstLow = last.sets[0].reps != null && last.sets[0].reps < bottom;
+      if (allTop && ex.legs && w >= 8) why = "Top of the range, but leg weights stay the same from week 8";
+      else if (allTop) { kg = base + STEP; why = "You hit " + top + " on every set: +2 kg"; }
+      else if (firstLow && prev && base > prev.kg && base >= STEP) { kg = base - STEP; why = "Under " + bottom + " after the increase: back 2 kg"; }
+      else why = "Same weight: aim for " + top + " on every set";
+    }
+    return { kg: kg, delta: kg - base, why: why, lastKg: base, lastWeek: last.week, lastReps: last.sets.map((x) => x.reps).filter((r) => r != null) };
   }
   function defaultType(w) {
     if (w === 10) return "A";
@@ -2342,17 +2400,25 @@ void main(){
     return fmtKg(kg) + " kg " + loadLabel(ex);
   }
 
+  // A session left unfinished under the earlier programme can't carry on with the new moves: its sets so far are saved
+  // as a session (ended early) so the weights still count, and it is closed.
+  if (S.current && S.current.pv !== 2) {
+    const o = S.current;
+    if (Array.isArray(o.sets) && o.sets.length) S.sessions.push({ id: o.id, type: o.type, week: o.week, date: new Date(o.startedAt || Date.now()).toISOString(),
+      durationSec: Math.round(((o.paused && o.pausedAt ? o.pausedAt : Date.now()) - (o.startedAt || Date.now())) / 1000), sets: o.sets, complete: false });
+    S.current = null; saveStrength();
+  }
   let C = S.current, SETS = C ? buildSets(C.type, C.week) : [], sFired = {}, sTicker = null;
   function sStart() {
     unlockAudio();
     const w = ui.sWeek || planWeek(), t = ui.sType || defaultType(w);
     const weights = {}, sug = {};
     SESSIONS[t].pairs.forEach((p) => p.forEach((id) => { const s = suggest(id, w); sug[id] = s; weights[id] = s.kg; }));
-    C = S.current = { id: "s" + Date.now().toString(36), type: t, week: w, startedAt: Date.now(), k: 0, phase: "warmup",
+    C = S.current = { pv: 2, id: "s" + Date.now().toString(36), type: t, week: w, startedAt: Date.now(), k: 0, phase: "warmup", wi: 0,
                       t0: Date.now(), sets: [], weights: weights, sug: sug, paused: false, leadType: null, leadDur: 0 };
     SETS = buildSets(t, w);
     saveStrength();
-    say(SESSIONS[t].name + ". Warm up first.");
+    say(SESSIONS[t].name + ". Warm-up first: " + SESSIONS[t].warm[0] + ", " + WARM_SECS + " seconds.");
     sEnter();
   }
   function sEnter() {
@@ -2367,6 +2433,7 @@ void main(){
     if (!C) return;
     SETS = buildSets(C.type, C.week);
     if (C.phase !== "warmup") { C.phase = "hold"; C.paused = false; }
+    else { C.t0 = Date.now(); C.paused = false; sFired = {}; } // the warm-up move starts again
     saveStrength();
     say("Welcome back.");
     sEnter();
@@ -2381,7 +2448,7 @@ void main(){
   }
   function sLead(k, type, prefix) {
     C.k = k; C.phase = "lead"; C.leadType = type; C.paused = false;
-    C.leadDur = type === "ready" ? READY : type === "change" ? CHANGE : type === "go" ? GO : S.rest;
+    C.leadDur = type === "ready" ? READY : type === "change" ? CHANGE : type === "go" ? GO : ((SETS[k - 1] && SETS[k - 1].rest) || 45);
     C.t0 = Date.now(); sFired = {};
     saveStrength();
     say(((prefix || "") + " " + leadIntro(k, type)).trim());
@@ -2399,7 +2466,11 @@ void main(){
     if (!C || ui.view !== "lift" || C.paused) { sPaintClock(); return; }
     const t = Date.now(), e = (t - C.t0) / 1000;
     const at = (key, time, fn) => { if (e >= time && !sFired[key]) { sFired[key] = true; if (e - time < 2.5) fn(); } };
-    if (C.phase === "lead") {
+    if (C.phase === "warmup") {
+      [3, 2, 1].forEach((n) => at("w" + n, WARM_SECS - n, () => beep(880, 0.1, 0.2)));
+      if (e >= WARM_SECS) { sWarmNext(); return; }
+      sPaintWarm(e);
+    } else if (C.phase === "lead") {
       const D = C.leadDur, ready = !needsWeight(C.k);
       if (D >= 20) at("t10", D - 10, () => { if (ready) say("10 seconds."); });
       [3, 2, 1].forEach((n) => at("c" + n, D - n, () => { if (ready) { say(String(n)); beep(880, 0.12, 0.25); } }));
@@ -2441,6 +2512,18 @@ void main(){
     }
     sPaintClock();
   }
+  // Next warm-up move, or the session once the last one is done
+  function sWarmNext() {
+    if (!C || C.phase !== "warmup") return;
+    const W = SESSIONS[C.type].warm;
+    C.wi = (C.wi || 0) + 1;
+    if (C.wi >= W.length) { sLead(0, "ready", "Warm-up done."); return; }
+    C.t0 = Date.now(); C.paused = false; sFired = {};
+    saveStrength();
+    say("Next: " + W[C.wi] + ".");
+    beep(1320, 0.15, 0.2);
+    render();
+  }
   function sFinishSet(reps, prefix, late) {
     const st = SETS[C.k], ex = EX[st.ex];
     C.sets.push({ ex: st.ex, set: st.set, kg: ex.load === "none" ? null : C.weights[st.ex], reps: reps });
@@ -2470,7 +2553,7 @@ void main(){
     sSet(C.k);
   }
   function sFinish(complete, prefix) {
-    const rec = { id: C.id, type: C.type, week: C.week, date: new Date(C.startedAt).toISOString(),
+    const rec = { pv: 2, id: C.id, type: C.type, week: C.week, date: new Date(C.startedAt).toISOString(),
                   durationSec: Math.round((Date.now() - C.startedAt) / 1000), sets: C.sets, complete: !!complete };
     if (rec.sets.length) { S.sessions.push(rec); if (S.sessions.length > 300) S.sessions = S.sessions.slice(-300); }
     S.current = null; C = null; saveStrength();
@@ -2531,7 +2614,24 @@ void main(){
       { hip: [140, 118], torso: 180, n: [164, 154, 5], f: [158, 154, 5], an: hp(-6, -12, -1), af: hp(-8, -12, -1) }] },
     march: { tempo: [1, 1], db: ["n"], p: [
       { hip: [120, 84], torso: -90, n: [136, 120, 10], f: [118, 154, 8], an: sh(3, 50), af: sh(6, 46) },
-      { hip: [120, 84], torso: -90, n: [122, 154, 8], f: [136, 120, 10], an: sh(3, 50), af: sh(-4, 48) }] }
+      { hip: [120, 84], torso: -90, n: [122, 154, 8], f: [136, 120, 10], an: sh(3, 50), af: sh(-4, 48) }] },
+    // Added with the 2026 programme. front2D: the stick figure is drawn from the front (a lateral raise can't be seen side on).
+    // alt: alternating sides, so every other rep shows the other arm and leg.
+    lat: { tempo: [1, 2], db: ["n", "f"], front2D: true, arc: 0.95, p: [
+      { hip: [120, 84], torso: -90, n: [122, 154, 8], f: [118, 154, 8], an: sh(2, 51), af: sh(2, 51) },
+      { hip: [120, 84], torso: -90, n: [122, 154, 8], f: [118, 154, 8], an: sh(7, 5), af: sh(7, 5) }] },
+    curl: { tempo: [1, 2], bench: [["r", 112, 118, 52, 8], ["l", 138, 126, 138, 158, 6], ["l", 125, 120, 85, 80, 9], ["l", 105, 100, 105, 158, 6]], db: ["n", "f"], p: [
+      { hip: [130, 112], torso: -135, n: [178, 154, 5], f: [172, 154, 5], an: sh(0, 53), af: sh(-2, 53) },
+      { hip: [130, 112], torso: -135, n: [178, 154, 5], f: [172, 154, 5], an: sh(19, 11), af: sh(17, 11) }] },
+    tri: { tempo: [2, 1], bench: [["r", 114, 118, 50, 8], ["l", 142, 126, 142, 158, 6], ["l", 119, 122, 110, 60, 9], ["l", 120, 126, 120, 158, 6]], db: ["n"], p: [
+      { hip: [127, 111], torso: -98, n: [170, 154, 5], f: [164, 154, 5], an: sh(-2, -53), af: sh(-2, -53) },
+      { hip: [127, 111], torso: -98, n: [170, 154, 5], f: [164, 154, 5], an: sh(-16, -14), af: sh(-16, -14) }] },
+    deadbug: { tempo: [2, 1], alt: true, arc: 0.97, db: [], p: [
+      { hip: [140, 151], torso: 180, n: [176, 113, -90], f: [176, 113, -90], an: sh(0, -53), af: sh(0, -53) },
+      { hip: [140, 151], torso: 180, n: [176, 113, -90], f: [212, 145, -70], an: sh(-50, -8), af: sh(0, -53) }] },
+    birddog: { tempo: [2, 1], alt: true, arc: 0.97, db: [], p: [
+      { hip: [96, 112], torso: -10, n: [60, 152, 180], f: [60, 152, 180], an: sh(0, 51), af: sh(0, 51) },
+      { hip: [96, 112], torso: -10, n: [60, 152, 180], f: [23, 106, 100], an: sh(52, -4), af: sh(0, 51) }] }
   };
   const rad = (a) => a * Math.PI / 180;
   const dirv = (a) => [Math.cos(rad(a)), Math.sin(rad(a))];
@@ -2548,8 +2648,29 @@ void main(){
   }
   const f1 = (n) => Math.round(n * 10) / 10;
   const pts = (arr) => arr.map((p) => f1(p[0]) + "," + f1(p[1])).join(" ");
+  // Front-view stick figure (lateral raise): arms swing out to the sides from hanging to shoulder height
+  function frontSVG(key, k) {
+    const A = ANIM[key], line = (a, b, w, o) => '<line x1="' + f1(a[0]) + '" y1="' + f1(a[1]) + '" x2="' + f1(b[0]) + '" y2="' + f1(b[1]) + '" stroke="currentColor" stroke-width="' + w + '" stroke-linecap="round"' + (o ? ' stroke-opacity="' + o + '"' : "") + "/>";
+    const hipL = [111, 86], hipR = [129, 86], shL = [102, 38], shR = [138, 38], neck = [120, 30], head = [120, 16];
+    let s = '<line x1="2" y1="158" x2="238" y2="158" stroke="currentColor" stroke-opacity="0.3" stroke-width="2"/>';
+    s += line(hipL, [110, 121], 9) + line([110, 121], [109, 154], 9) + line(hipR, [130, 121], 9) + line([130, 121], [131, 154], 9);
+    s += line([104, 156], [114, 156], 6) + line([126, 156], [136, 156], 6);
+    s += '<polygon points="' + pts([shL, shR, hipR, hipL]) + '" fill="currentColor"/>' + line(neck, [120, 38], 7);
+    s += '<circle cx="' + head[0] + '" cy="' + head[1] + '" r="' + L.head + '" fill="currentColor"/>';
+    const th = lerp(10, 84, k), fa = lerp(6, 74, k);
+    [[shL, -1], [shR, 1]].forEach(([S0, sg]) => {
+      const e = [S0[0] + sg * L.ua * Math.sin(rad(th)), S0[1] + L.ua * Math.cos(rad(th))];
+      const h = [e[0] + sg * L.fa * Math.sin(rad(fa)), e[1] + L.fa * Math.cos(rad(fa))];
+      s += line(S0, e, 8) + line(e, h, 8);
+      if ((A.db || []).length) s += line([h[0], h[1] - 9], [h[0], h[1] + 9], 7) + '<circle cx="' + f1(h[0]) + '" cy="' + f1(h[1]) + '" r="3" fill="var(--bg)"/>';
+    });
+    return '<svg viewBox="0 -34 240 198" role="img" aria-label="Exercise demonstration" preserveAspectRatio="xMidYMid meet">' + s + "</svg>";
+  }
   function figureSVG(key, k, mirror) {
-    const A = ANIM[key], P0 = A.p[0], P1 = A.p[1];
+    if (ANIM[key].front2D) return frontSVG(key, k);
+    let A = ANIM[key], P0 = A.p[0], P1 = A.p[1];
+    // alternating moves show the other side by swapping the near and far limbs, not by flipping the picture
+    if (mirror && A.alt) { const sw = (P) => Object.assign({}, P, { n: P.f, f: P.n, an: P.af, af: P.an }); P0 = sw(P0); P1 = sw(P1); mirror = false; }
     const hip = [lerp(P0.hip[0], P1.hip[0], k), lerp(P0.hip[1], P1.hip[1], k)];
     const td = dirv(lerpAng(P0.torso, P1.torso, k));
     const shd = [hip[0] + td[0] * L.torso, hip[1] + td[1] * L.torso];
@@ -2562,7 +2683,8 @@ void main(){
     };
     const arm = (s) => {
       const a = P0[s], b = P1[s], base = a.to === "sh" ? shd : a.to === "hip" ? hip : [0, 0];
-      const T = [base[0] + lerp(a.p[0], b.p[0], k), base[1] + lerp(a.p[1], b.p[1], k)];
+      let T = [base[0] + lerp(a.p[0], b.p[0], k), base[1] + lerp(a.p[1], b.p[1], k)];
+      if (A.arc && a.to === "sh") { const d = (L.ua + L.fa) * A.arc, v = [T[0] - shd[0], T[1] - shd[1]], vl = Math.hypot(v[0], v[1]) || 1; T = [shd[0] + v[0] / vl * d, shd[1] + v[1] / vl * d]; }
       const [elb, hand] = ik(shd, T, L.ua, L.fa, a.b);
       return [shd, elb, hand];
     };
@@ -2658,12 +2780,14 @@ void main(){
     figs.slice(1).concat(figs.slice(0, 1)).forEach((el) => {
       const key = el.getAttribute("data-fig"), mode = el.getAttribute("data-mode");
       let k, mirror = false;
+      const cyc = ANIM[key].tempo[0] + ANIM[key].tempo[1];
       if (mode === "set" && C && C.phase === "set") {
         const p = setPlan(SETS[C.k].ex), e = Math.max(0, ((C.paused ? C.pausedAt : Date.now()) - C.t0) / 1000), pos = setPos(p, e);
         mirror = pos.side === 1 || (pos.gap && pos.side === 0);
         k = pos.gap || pos.done ? 0 : blendAt(key, pos.local);
-      } else if (mode === "still") k = +el.getAttribute("data-k") || 0;
-      else k = reduceMotion ? 1 : blendAt(key, now);
+        if (ANIM[key].alt) mirror = Math.floor(pos.local / cyc) % 2 === 1;
+      } else if (mode === "still") { k = +el.getAttribute("data-k") || 0; mirror = el.getAttribute("data-m") === "1"; }
+      else { k = reduceMotion ? 1 : blendAt(key, now); if (ANIM[key].alt && !reduceMotion) mirror = Math.floor(now / cyc) % 2 === 1; }
       if (use3d) { if ((due || !el._cv) && figPaint(el, key, k, mirror, el === figs[0])) drew = true; return; }
       if (el._cv) { el._cv = null; el._sig = null; }
       const sig = key + (mirror ? "m" : "") + Math.round(k * 200);
@@ -2726,7 +2850,7 @@ void main(){
 
   // ----- Home -----
   function itemSub(it, w) {
-    if (it.t === "strength") return "About 25 minutes, voice-coached";
+    if (it.t === "strength") return SESSIONS[it.s].focus + ". Up to " + sessMins(it.s, w) + " min, voice-coached";
     if (it.t === "easy") { const p = easyPlan(w, it.v); return "About " + Math.round(contEst(p) / 60) + " min at 5:15–5:45/km"; }
     if (it.t === "intervals") return "About " + Math.round(iEst(intervalPlan(w)) / 60) + " min with warm-up and warm-down";
     if (it.t === "long") { const p = longPlan(w); return p.kind === "race" ? "Goal 40:45, 4:05/km" : "About " + Math.round(contEst(p) / 60) + " min"; }
@@ -2756,7 +2880,7 @@ void main(){
     });
     h += "</div>";
     h += '<div class="choices"><button type="button" class="choice" data-act="go-run"><span class="big-word">Run</span><span class="sub">Easy, intervals, long run</span></button>' +
-      '<button type="button" class="choice" data-act="go-lift"><span class="big-word">Strength</span><span class="sub">Session A or B</span></button></div>';
+      '<button type="button" class="choice" data-act="go-lift"><span class="big-word">Strength</span><span class="sub">Strength 1 or 2</span></button></div>';
     h += '<section aria-labelledby="weekTitle"><h2 class="section-title" id="weekTitle">' + (pre ? "Week 1" : "This week") + '</h2><ul class="week-list">';
     sched.forEach((items, d) => {
       const today = !pre && d === di;
@@ -3475,22 +3599,23 @@ void main(){
     let h = '<section class="history" aria-labelledby="sHistTitle"><h2 class="section-title" id="sHistTitle">Logged sessions</h2>';
     if (!ss.length) return h + '<p class="soft">Nothing logged yet. Your first session sets your starting weights.</p></section>';
     ss.forEach((s) => {
-      h += "<details><summary><span>" + esc(fmtDay(s.date)) + " · " + esc(SESSIONS[s.type].name) + '</span><span class="soft">' + esc(shortWeek(s.week)) + (s.complete ? "" : " · ended early") + "</span></summary><ul>";
+      h += "<details><summary><span>" + esc(fmtDay(s.date)) + " · " + esc(sessName(s)) + '</span><span class="soft">' + esc(shortWeek(s.week)) + (s.complete ? "" : " · ended early") + "</span></summary><ul>";
       perExercise(s).forEach((r) => { h += "<li><span>" + esc(r.name) + "</span><span>" + esc(r.val) + "</span></li>"; });
       h += "</ul></details>";
     });
     return h + "</section>";
   }
+  // One line per move, in the order they were done (works for sessions from the earlier programme too)
   function perExercise(rec) {
-    const out = [];
-    SESSIONS[rec.type].pairs.forEach((p) => p.forEach((id) => {
+    const out = [], ids = [];
+    rec.sets.forEach((r) => { if (r && EX[r.ex] && !ids.includes(r.ex)) ids.push(r.ex); });
+    ids.forEach((id) => {
       const rs = rec.sets.filter((r) => r.ex === id);
-      if (!rs.length) return;
       const ex = EX[id];
       const val = ex.load === "none" ? rs.length + (rs.length === 1 ? " set" : " sets") : rs.map((r) => fmtKg(r.kg)).join(" · ") + " kg";
       const reps = rs.map((r) => r.reps).filter((r) => r != null);
       out.push({ name: ex.name, val: val, reps: reps.length && !ex.hold ? reps.join(" · ") + " reps" : "" });
-    }));
+    });
     return out;
   }
   function renderLiftSetup() {
@@ -3498,39 +3623,37 @@ void main(){
     const auto = planWeek(), w = ui.sWeek || auto, t = ui.sType || defaultType(w), Sx = SESSIONS[t], pre = beforePlan();
     let h = '<section class="view scroll" aria-labelledby="liftTitle">' + backLink();
     h += '<header><p class="label">Sub-41 plan · ' + shortWeek(w) + '</p><h1 class="title" id="liftTitle">' + esc(Sx.name) +
-      '</h1><p class="lede">' + esc(Sx.day) + ", about 25 minutes. The voice counts every rep, tells you what's next and which weight to use.</p></header>";
+      '</h1><p class="lede">' + esc(Sx.day) + " · " + esc(Sx.focus) + ". Up to " + sessMins(t, w) + " minutes with the warm-up. The voice counts every rep, tells you what's next and which weight to use.</p></header>";
     if (C) h += '<div class="notice"><p class="notice-title">Unfinished: ' + esc(SESSIONS[C.type].name) + '</p><div class="notice-actions"><button type="button" class="btn primary" data-act="lift-resume">Resume</button>' +
       (C.sets.length ? '<button type="button" class="btn" data-act="lift-close">Save and close</button>' : '<button type="button" class="btn" data-act="lift-discard">Discard</button>') + "</div></div>";
     let opts = "";
     for (let i = 1; i <= 10; i++) opts += '<option value="' + i + '"' + (i === w ? " selected" : "") + ">Week " + i + (isLight(i) ? " · lighter" : i === 10 ? " · race" : "") + (i === auto && !pre ? " (now)" : "") + "</option>";
     if (auto > 10) opts += '<option value="' + auto + '"' + (w === auto ? " selected" : "") + ">After the race (now)</option>";
     h += '<div class="fields"><div class="field"><span class="label" id="sessLbl">Session</span><div class="seg" role="group" aria-labelledby="sessLbl">' +
-      '<button type="button" data-act="stype" data-type="A" aria-pressed="' + (t === "A") + '">A · Mon</button>' +
-      '<button type="button" data-act="stype" data-type="B" aria-pressed="' + (t === "B") + '">B · Thu</button></div></div>' +
+      '<button type="button" data-act="stype" data-type="A" aria-pressed="' + (t === "A") + '">1 · Mon</button>' +
+      '<button type="button" data-act="stype" data-type="B" aria-pressed="' + (t === "B") + '">2 · Thu</button></div></div>' +
       '<div class="field"><label class="label" for="sWeekSel">Plan week</label><div class="select-wrap"><select id="sWeekSel">' + opts + "</select></div></div></div>";
     h += '<p class="week-note">' + esc(weekNote(w, t)) + '</p><div class="plan">';
     Sx.pairs.forEach((pair, pi) => {
       const n = setsFor(pi, w);
-      h += '<div class="pair"><div class="pair-head"><span class="label">Pair ' + PAIRS[pi] + '</span><span class="label">' + n + " rounds</span></div>";
+      h += '<div class="pair"><div class="pair-head"><span class="label">Pair ' + PAIRS[pi] + " · " + esc(Sx.kit[pi]) + '</span><span class="label">' + n + " rounds · " + Sx.rest[pi] + " s rest</span></div>";
       pair.forEach((id, ei) => {
-        const ex = EX[id], open = ui.preview === id;
+        const ex = EX[id], open = ui.preview === id, rir = rirText(ex, w);
         h += '<button type="button" class="row" data-act="preview" data-id="' + id + '" aria-expanded="' + open + '"><span class="tag">' + PAIRS[pi] + (ei + 1) +
-          '</span><span class="nm">' + esc(ex.name) + '<span class="dose">' + n + " × " + esc(doseText(ex)) + '</span></span><span class="kg">' + kgCell(ex, suggest(id, w)) + "</span></button>";
-        if (open) h += '<div class="fig fig-start" data-fig="' + ex.anim + '" data-mode="demo"></div><p class="soft">' + esc(ex.cue) + "</p>";
+          '</span><span class="nm">' + esc(ex.name) + '<span class="dose">' + n + " × " + esc(doseText(ex)) + (rir ? " · " + esc(rir) : "") + '</span></span><span class="kg">' + kgCell(ex, suggest(id, w)) + "</span></button>";
+        if (open) h += '<div class="fig fig-start" data-fig="' + ex.anim + '" data-mode="demo"></div><p class="soft">' + esc(ex.cue) + ". Tempo: " + esc(ex.tempo) + ".</p>" + (ex.swap ? '<p class="swap">' + esc(ex.swap) + "</p>" : "");
       });
       h += "</div>";
     });
     h += '</div><p class="tap-hint">Tap an exercise to see how it moves.</p>';
     if (!FIG.failed) h += '<div class="field"><span class="label" id="figLbl">Coach figure</span><div class="seg" role="group" aria-labelledby="figLbl">' +
       [["m", "Male"], ["f", "Female"]].map(([v, l]) => '<button type="button" data-act="fig-sex" data-sex="' + v + '" aria-pressed="' + (S.fig === v) + '">' + l + "</button>").join("") + "</div></div>";
-    h += '<div class="field"><span class="label" id="restLbl">Rest between rounds</span><div class="seg" role="group" aria-labelledby="restLbl">' +
-      RESTS.map((r) => '<button type="button" data-act="rest-opt" data-rest="' + r + '" aria-pressed="' + (S.rest === r) + '">' + r + " s</button>").join("") + "</div></div>";
-    h += '<div class="panel"><div class="panel-row"><div><p class="status">Voice coach</p><p class="status-note">Counts at 2 seconds down, 1 up. Test the volume with your headphones.</p></div>' +
+    h += '<div class="panel"><div class="panel-row"><div><p class="status">Voice coach</p><p class="status-note">Counts every rep at the tempo shown for each move. Need longer between rounds? Tap +15 s during a rest. Test the volume with your headphones.</p></div>' +
       '<button type="button" class="btn small" data-act="test-voice-lift">Test voice</button></div></div>';
     h += liftHistoryHtml();
     h += '<p class="fine">Keep this page open with the screen on. If the phone locks, the count stops.</p>';
     h += '<div class="sticky-bar">' + (C ? '<button type="button" class="btn primary wide" data-act="lift-resume">Resume ' + esc(SESSIONS[C.type].name) + "</button>"
-      : (w === 10 && t === "B" ? '<button type="button" class="btn primary wide" disabled>No Strength B in race week</button>' : '<button type="button" class="btn primary wide" data-act="lift-start">Start ' + esc(Sx.name) + "</button>")) + "</div></section>";
+      : (w === 10 && t === "B" ? '<button type="button" class="btn primary wide" disabled>No Strength 2 in race week</button>' : '<button type="button" class="btn primary wide" data-act="lift-start">Start ' + esc(Sx.name) + "</button>")) + "</div></section>";
     app.innerHTML = h;
   }
 
@@ -3553,7 +3676,7 @@ void main(){
     if (ex.load === "none") return '<div class="weight"><span class="label">Weight</span><strong class="count-big" style="font-size:2.4rem">Bodyweight</strong></div>';
     const sg = (C.sug && C.sug[id]) || {};
     const note = sg.first || sg.lastKg == null ? "First time: choose a weight you could lift 2–3 more reps with." + (ex.allowZero ? " Enter 0 for bodyweight." : "")
-      : sg.why + ". Last time " + fmtKg(sg.lastKg) + " kg in " + shortWeek(sg.lastWeek).toLowerCase() + ".";
+      : sg.why + ". Last time " + fmtKg(sg.lastKg) + " kg" + (sg.lastReps && sg.lastReps.length ? ": " + sg.lastReps.join(", ") + " reps" : "") + " (" + shortWeek(sg.lastWeek).toLowerCase() + ").";
     return '<div class="weight"><label class="label" for="kgInput">Weight, kg ' + esc(loadLabel(ex)) + '</label><div class="stepper">' +
       '<button type="button" class="step-btn" data-act="minus" aria-label="2 kilograms lighter">−</button>' +
       '<div class="kg-wrap"><input id="kgInput" class="kg-input" type="text" inputmode="decimal" autocomplete="off" enterkeyhint="done" placeholder="–" value="' + (v == null ? "" : fmtKg(v)) + '"><span class="kg-unit">kg</span></div>' +
@@ -3565,14 +3688,27 @@ void main(){
     if (C.phase === "set") return renderLiftSet();
     return renderLiftLead();
   }
+  // Warm-up: each move gets WARM_SECS on the clock, then the next one starts on its own
   function renderLiftWarmup() {
     document.body.setAttribute("data-phase", "idle");
-    const first = SETS[0];
+    document.body.classList.toggle("is-paused", C.paused);
+    const first = SETS[0], W = SESSIONS[C.type].warm, wi = Math.min(C.wi || 0, W.length - 1), lastMove = wi === W.length - 1;
     let h = '<section class="view run">' + liftTop() + '<div class="stage"><div class="stage-inner">';
-    h += '<p class="lead-word">Warm-up · about 3 minutes</p><h1 class="ex-name">Hips and core first</h1><ol class="warm-list">' + WARM_MOVES.map((x) => "<li>" + esc(x) + "</li>").join("") + "</ol>";
-    h += '<p class="soft">First up: ' + first.tag + " " + esc(EX[first.ex].name) + " · " + esc(weightText(first.ex)) + "</p></div></div>";
-    h += ui.confirmEnd ? liftConfirm() : '<div class="controls last"><button type="button" class="btn primary wide" data-act="warm-done">Start the session</button></div>';
+    h += '<p class="lead-word">' + (C.paused ? "Paused" : "Warm-up · move " + (wi + 1) + " of " + W.length) + '</p><h1 class="ex-name">' + esc(W[wi]) + "</h1>";
+    h += '<div class="count-big" id="warmCount">' + WARM_SECS + '</div><div class="bar" aria-hidden="true"><div id="warmBar"></div></div>';
+    h += '<ol class="warm-list">' + W.map((x, i) => '<li class="' + (i < wi ? "past" : i === wi ? "now" : "") + '">' + esc(x) + " · " + WARM_SECS + " s</li>").join("") + "</ol>";
+    h += '<p class="soft">Then ' + first.tag + " " + esc(EX[first.ex].name) + " · " + esc(weightText(first.ex)) + "</p></div></div>";
+    h += ui.confirmEnd ? liftConfirm() : '<div class="controls two last"><button type="button" class="btn" data-act="lift-pause">' + (C.paused ? "Resume" : "Pause") + '</button><button type="button" class="btn primary" data-act="warm-next">' + (lastMove ? "Start lifting" : "Next move") + "</button></div>";
     app.innerHTML = h + "</section>";
+    sPaintWarm((Date.now() - C.t0) / 1000);
+  }
+  function sPaintWarm(e) {
+    if (!C || C.phase !== "warmup") return;
+    if (C.paused) e = (C.pausedAt - C.t0) / 1000;
+    const left = Math.max(0, WARM_SECS - e), el = $("warmCount"), bar = $("warmBar");
+    if (el) { const t = String(Math.ceil(left)); if (el.textContent !== t) el.textContent = t; }
+    if (bar) bar.style.transform = "scaleX(" + Math.min(1, left / WARM_SECS).toFixed(4) + ")";
+    sPaintClock();
   }
   function renderLiftLead() {
     const st = SETS[C.k], ex = EX[st.ex], hold = C.phase === "hold", rest = C.leadType === "rest" && !hold;
@@ -3582,7 +3718,8 @@ void main(){
     let h = '<section class="view run">' + liftTop() + '<div class="stage"><div class="stage-inner">';
     h += '<p class="lead-word">' + esc(C.paused ? "Paused" : word) + "</p>";
     if (!hold) h += '<div class="count-big" id="leadCount">' + Math.ceil(C.leadDur) + '</div><div class="bar" aria-hidden="true"><div id="leadBar"></div></div>';
-    h += '<div class="next-card"><div class="tagline"><span class="tag-pill">' + st.tag + "</span><span>Set " + st.set + " of " + st.of + " · " + esc(doseText(ex)) + "</span></div>" +
+    const rir = rirText(ex, C.week);
+    h += '<div class="next-card"><div class="tagline"><span class="tag-pill">' + st.tag + "</span><span>Set " + st.set + " of " + st.of + " · " + esc(doseText(ex)) + (rir ? " · " + esc(rir) : "") + "</span></div>" +
       '<h2 class="ex-name">' + esc(ex.name) + '</h2><p class="cue">' + esc(ex.cue) + "</p>" +
       '<div class="fig fig-next" data-fig="' + ex.anim + '" data-mode="demo"></div>' + stepperHtml(st.ex) + (ex.swap ? '<p class="swap">' + esc(ex.swap) + "</p>" : "") + "</div></div></div>";
     if (ui.confirmEnd) h += liftConfirm();
@@ -3645,18 +3782,18 @@ void main(){
   }
   function nextHint(r) {
     if (r.week === 10) return "Race week strength is done. Keep your legs fresh and run well.";
-    if (r.type === "A") return "Next strength session: Strength B on Thursday.";
+    if (r.type === "A") return "Next strength session: Strength 2 on Thursday.";
     const nw = r.week + 1;
-    if (isLight(nw)) return "Next strength session: Strength A on Monday. Next week is lighter: same weights, fewer sets.";
-    if (nw === 10) return "Next strength session: Strength A on Monday. It's race week, so legs go lighter.";
-    return "Next strength session: Strength A on Monday. Every lift goes up 2 kg next week.";
+    if (isLight(nw)) return "Next strength session: Strength 1 on Monday. Next week is lighter: same weights, fewer sets.";
+    if (nw === 10) return "Next strength session: Strength 1 on Monday. It's race week, so legs go lighter.";
+    return "Next strength session: Strength 1 on Monday. Any lift where you hit the top of the range on every set goes up 2 kg.";
   }
   function renderLiftDone() {
     const r = ui.lastLift, v = r.type === "A" ? "mon" : "thu", ew = Math.min(r.week, 10);
     const offerRun = !(ew === 10 && r.type === "B") && !isDone({ t: "easy", v: v }, ew);
     document.body.setAttribute("data-phase", "done");
     let h = '<section class="view done" aria-labelledby="doneTitle"><h1 class="done-title" id="doneTitle">' + (r.complete ? "Logged." : "Saved.") + "</h1>" +
-      '<p class="done-meta">' + esc(SESSIONS[r.type].name) + " · " + esc(shortWeek(r.week)) + " · " + Math.max(1, Math.round(r.durationSec / 60)) + ' min</p><ul class="summary">';
+      '<p class="done-meta">' + esc(sessName(r)) + " · " + esc(shortWeek(r.week)) + " · " + Math.max(1, Math.round(r.durationSec / 60)) + ' min</p><ul class="summary">';
     perExercise(r).forEach((x) => { h += "<li><span>" + esc(x.name) + "</span><span>" + esc(x.val) + (x.reps ? '<br><span class="soft">' + esc(x.reps) + "</span>" : "") + "</span></li>"; });
     h += '</ul><p class="done-next">' + esc(nextHint(r)) + "</p>";
     h += '<div class="done-actions"><button type="button" class="btn" data-act="copy-lift">Copy summary</button>';
@@ -3666,14 +3803,14 @@ void main(){
     app.innerHTML = h;
   }
   function liftSummaryText(r) {
-    const lines = [SESSIONS[r.type].name + ", " + shortWeek(r.week).toLowerCase() + ", " + fmtDay(r.date)];
+    const lines = [sessName(r) + ", " + shortWeek(r.week).toLowerCase() + ", " + fmtDay(r.date)];
     perExercise(r).forEach((x) => lines.push(x.name + ": " + x.val + (x.reps ? " (" + x.reps + ")" : "")));
     return lines.join("\n");
   }
   function renderGallery() {
     document.body.setAttribute("data-phase", "idle");
-    const k = location.search.includes("k=1") ? 1 : 0;
-    app.innerHTML = '<div class="gallery">' + Object.keys(ANIM).map((a) => "<div>" + a + '<div class="fig" data-fig="' + a + '" data-mode="still" data-k="' + k + '"></div></div>').join("") + "</div>";
+    const km = /[?&]k=([0-9.]+)/.exec(location.search), k = km ? Math.min(1, Math.max(0, +km[1])) : 0, m = /[?&]m=1/.test(location.search) ? "1" : "0";
+    app.innerHTML = '<div class="gallery">' + Object.keys(ANIM).map((a) => "<div>" + a + '<div class="fig" data-fig="' + a + '" data-mode="still" data-k="' + k + '" data-m="' + m + '"></div></div>').join("") + "</div>";
   }
 
   // =====================================================================
@@ -3728,7 +3865,6 @@ void main(){
       case "map-retry": if (MV.state === "failed") mapLoad(); break;
       // strength
       case "stype": ui.sType = b.getAttribute("data-type"); ui.preview = null; render(); break;
-      case "rest-opt": S.rest = +b.getAttribute("data-rest"); saveStrength(); render(); break;
       case "fig-sex": S.fig = b.getAttribute("data-sex") === "f" ? "f" : "m"; saveStrength(); render(); break;
       case "preview": { const id = b.getAttribute("data-id"); ui.preview = ui.preview === id ? null : id; render(); break; }
       case "test-voice-lift": say("One. Two. Three. Rest. Next: bench press. 18 kilos each hand."); beep(620, 0.05, 0.15); break;
@@ -3736,7 +3872,7 @@ void main(){
       case "lift-resume": sResume(); break;
       case "lift-close": sFinish(false, ""); break;
       case "lift-discard": sDiscard(); break;
-      case "warm-done": sLead(0, "ready", ""); break;
+      case "warm-next": hush(); sWarmNext(); break;
       case "lift-go": {
         if (needsWeight(C.k)) {
           const er = $("kgErr"); if (er) er.textContent = "Enter the weight you'll use, in kg." + (EX[SETS[C.k].ex].allowZero ? " Enter 0 for bodyweight." : "");
