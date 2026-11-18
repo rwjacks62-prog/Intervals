@@ -240,6 +240,42 @@ select {
 .week-list li.is-today .d { color: var(--accent); }
 .week-list li.is-today { background: linear-gradient(90deg, var(--panel), transparent); }
 .section-title { font-family: var(--font-display); font-weight: 800; font-size: 1.9rem; line-height: 1; margin-bottom: 0.4rem; }
+/* Rearranging the week (v2): Edit week shows a handle on each session; drag it to a day, or tap the session to pick one */
+.week-head { display: flex; align-items: center; justify-content: space-between; gap: 0.75rem; margin-bottom: 0.4rem; }
+.week-head .section-title { margin-bottom: 0; }
+.wk-help { font-size: 0.9rem; color: var(--fg-soft); margin: 0 0 0.5rem; }
+.week-list .w > .wk-warn { color: var(--warn); font-size: 0.85rem; font-weight: 600; line-height: 1.3; margin-top: 0.15rem; }
+.week-list.editing, .week-list.editing * { -webkit-user-select: none; user-select: none; -webkit-touch-callout: none; }
+.week-list.editing li { grid-template-columns: 3rem minmax(0, 1fr); align-items: start; min-height: 3.5rem; padding: 0.3rem 0; transition: background-color 0.12s ease, box-shadow 0.12s ease; }
+.week-list.editing .dt { display: none; }
+.week-list.editing .d { padding-top: 0.75rem; }
+.week-list .w > .wk-item { display: flex; align-items: center; gap: 0.3rem; }
+.week-list .w > .wk-still { display: flex; align-items: center; min-height: 2.75rem; }
+.wk-fixed { margin-left: 0.3rem; font-size: 0.85rem; font-weight: 600; color: var(--fg-soft); }
+.wk-name { appearance: none; flex: 1; min-width: 0; min-height: 2.75rem; padding: 0.3rem 0; border: 0; background: none; color: inherit; font: inherit; font-weight: 600; text-align: left; cursor: pointer; touch-action: manipulation; }
+.wk-handle { flex-shrink: 0; width: 2.75rem; height: 2.75rem; display: flex; align-items: center; justify-content: center; border-radius: 0.65rem; background: var(--panel); font-size: 1.45rem; font-weight: 700; line-height: 1; cursor: grab; touch-action: none; }
+.wk-handle:active { background: var(--chip); }
+.wk-item.wk-src { opacity: 0.35; }
+.week-list li.wk-over { background: var(--chip); box-shadow: inset 0 0 0 2px var(--accent); border-radius: 0.5rem; }
+.wk-ghost { position: fixed; left: 0; top: 0; z-index: 60; pointer-events: none; max-width: calc(100vw - 16px); padding: 0.7rem 1rem; border-radius: 0.875rem; background: var(--fg); color: var(--bg); font-weight: 700; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; box-shadow: 0 10px 28px rgba(0, 0, 0, 0.3); }
+body.wk-dragging, body.wk-dragging * { cursor: grabbing; -webkit-user-select: none; user-select: none; -webkit-touch-callout: none; }
+.wk-bar { display: grid; grid-template-columns: 1fr 1fr; gap: 0.6rem; margin-top: 0.75rem; }
+.wk-toast { position: fixed; z-index: 55; left: 50%; transform: translateX(-50%); bottom: calc(env(safe-area-inset-bottom, 0px) + 1rem); width: calc(100% - 32px); max-width: 32rem; display: flex; align-items: center; justify-content: space-between; gap: 0.75rem; padding: 0.5rem 0.5rem 0.5rem 1rem; border-radius: 0.875rem; background: var(--fg); color: var(--bg); font-weight: 600; font-size: 0.95rem; line-height: 1.3; box-shadow: 0 6px 20px rgba(0, 0, 0, 0.25); }
+.wk-toast button { appearance: none; flex-shrink: 0; min-height: 2.75rem; padding: 0 1rem; border-radius: 0.65rem; border: 2px solid currentColor; background: transparent; color: inherit; font: inherit; font-weight: 700; cursor: pointer; touch-action: manipulation; }
+.wk-sheet-wrap { position: fixed; inset: 0; z-index: 70; display: flex; align-items: flex-end; justify-content: center; }
+.wk-scrim { position: absolute; inset: 0; background: rgba(10, 12, 20, 0.45); }
+.wk-sheet { position: relative; width: 100%; max-width: 34rem; max-height: 92%; overflow-y: auto; -webkit-overflow-scrolling: touch; background: var(--bg); color: var(--fg); border-radius: 1.25rem 1.25rem 0 0; padding: 1.1rem max(16px, env(safe-area-inset-right, 0px)) calc(env(safe-area-inset-bottom, 0px) + 0.75rem) max(16px, env(safe-area-inset-left, 0px)); display: flex; flex-direction: column; gap: 0.7rem; box-shadow: 0 -8px 30px rgba(0, 0, 0, 0.2); }
+.wk-sheet:focus { outline: none; }
+.wk-sheet-title { font-family: var(--font-display); font-weight: 800; font-size: 2rem; line-height: 1; }
+.wk-sheet .btn { width: 100%; }
+.wk-sheet .wk-cancel { align-self: center; }
+.wk-days { display: grid; grid-template-columns: repeat(4, 1fr); gap: 0.5rem; }
+.wk-days button { appearance: none; min-height: 3.25rem; border-radius: 0.75rem; border: 2px solid var(--fg); background: transparent; color: inherit; font: inherit; font-weight: 700; line-height: 1.1; cursor: pointer; touch-action: manipulation; }
+.wk-days button small { display: block; font-size: 0.7rem; font-weight: 600; }
+.wk-days button[aria-pressed="true"] { background: var(--fg); color: var(--bg); }
+.wk-days button:disabled { opacity: 0.4; cursor: default; }
+.wk-warn-line { color: var(--warn); font-weight: 700; }
+.wk-name:focus-visible, .wk-days button:focus-visible, .wk-toast button:focus-visible { outline: 3px solid var(--accent); outline-offset: 2px; }
 
 /* Run setup and strength plan */
 .session { display: flex; flex-direction: column; gap: 0.8rem; }
@@ -1329,27 +1365,34 @@ void main(){
   };
   const SWITCH = { leg: "Switch legs.", arm: "Switch arms.", side: "Switch sides.", hand: "Switch hands." };
 
-  // The week
-  function weekSchedule(w) {
+  // The week. Each session has an id that stays with it whichever day it is moved to (see "Rearranging the week"),
+  // so it keeps its details (the Thursday run keeps its strides) and its tick. "mon" and "thu" on the easy runs
+  // name the run (plain, or with strides), not the day.
+  function weekItems(w) {
     const ww = Math.min(Math.max(1, w), 10);
-    if (ww === 10) return [
-      [{ t: "strength", s: "A", label: "Strength 1, light" }, { t: "easy", v: "mon", label: easyPlan(10, "mon").title }],
-      [{ t: "intervals", label: "Intervals: " + iTitle(intervalPlan(10)) }],
-      [{ t: "note", label: "Rest. Skip padel this week" }],
-      [{ t: "easy", v: "thu", label: easyPlan(10, "thu").title }],
-      [{ t: "note", label: "Rest, or 15 min very easy" }],
-      [{ t: "long", label: "Race day: 10 km" }],
-      [{ t: "note", label: "Rest" }]
-    ];
-    return [
-      [{ t: "strength", s: "A", label: "Strength 1" }, { t: "easy", v: "mon", label: easyPlan(ww, "mon").title }],
-      [{ t: "intervals", label: "Intervals: " + iTitle(intervalPlan(ww)) }],
-      [{ t: "note", label: "Padel" }],
-      [{ t: "strength", s: "B", label: "Strength 2" }, { t: "easy", v: "thu", label: easyPlan(ww, "thu").title }],
-      [{ t: "note", label: "Rest" }],
-      [{ t: "long", label: "Long run: " + longPlan(ww).title }],
-      [{ t: "note", label: "Rest, plus the desk reset" }]
-    ];
+    if (ww === 10) return {
+      s1: { t: "strength", s: "A", label: "Strength 1, light" }, e1: { t: "easy", v: "mon", label: easyPlan(10, "mon").title },
+      int: { t: "intervals", label: "Intervals: " + iTitle(intervalPlan(10)) }, e2: { t: "easy", v: "thu", label: easyPlan(10, "thu").title },
+      long: { t: "long", label: "Race day: 10 km", fixed: true }
+    };
+    return {
+      s1: { t: "strength", s: "A", label: "Strength 1" }, e1: { t: "easy", v: "mon", label: easyPlan(ww, "mon").title },
+      int: { t: "intervals", label: "Intervals: " + iTitle(intervalPlan(ww)) }, pad: { t: "padel", label: "Padel" },
+      s2: { t: "strength", s: "B", label: "Strength 2" }, e2: { t: "easy", v: "thu", label: easyPlan(ww, "thu").title },
+      long: { t: "long", label: "Long run: " + longPlan(ww).title }
+    };
+  }
+  // What a day with nothing on it says: the plan's own note for that day, otherwise "Rest"
+  function restLabel(w, d) {
+    if (w >= 10) return ["Rest", "Rest", "Rest. Skip padel this week", "Rest", "Rest, or 15 min very easy", "Rest", "Rest"][d];
+    return d === 6 ? "Rest, plus the desk reset" : "Rest";
+  }
+  // Seven days, each a list of sessions (or one rest note), laid out as you've arranged them. st: a saved arrangement to use instead of yours.
+  function weekSchedule(w, st) {
+    const ww = Math.min(Math.max(1, w), 10), items = weekItems(ww), days = wkDays(ww, st), out = [[], [], [], [], [], [], []];
+    WK_ORDER.forEach((id) => { if (items[id]) out[days[id]].push(Object.assign({ id: id }, items[id])); });
+    out.forEach((a, d) => { if (!a.length) a.push({ t: "note", label: restLabel(ww, d) }); });
+    return out;
   }
 
   // =====================================================================
@@ -1453,6 +1496,106 @@ void main(){
     if (item.t === "intervals") return RS.history.some((x) => runKind(x) === "intervals" && x.w === w);
     if (item.t === "long") return RS.history.some((x) => (runKind(x) === "long" || runKind(x) === "race") && x.w === w);
     return false;
+  }
+
+  // =====================================================================
+  // Rearranging the week (v2). Moves are saved under their own key and never touch the runs, routes or weights.
+  // every: moves for every week from a given week on (weeks 1–9 only); weeks: moves for one week only (1–10).
+  // A week is laid out as the plan, then the "every week" moves that have started, then that week's own moves.
+  // In race week the race stays on Saturday, and there is no padel or Strength 2.
+  // =====================================================================
+  const WKKEY = "sub41-week-v1";
+  const WK_ORDER = ["s1", "s2", "e1", "e2", "int", "long", "pad"]; // order within a day
+  const WK_PLAN = { s1: 0, e1: 0, int: 1, pad: 2, s2: 3, e2: 3, long: 5 };
+  const WK_PLAN10 = { s1: 0, e1: 0, int: 1, e2: 3, long: 5 };
+  const WK_NAME = { s1: "Strength 1", s2: "Strength 2", e1: "Easy run", e2: "Easy run with strides", int: "Intervals", long: "Long run", pad: "Padel" };
+  let WK = { v: 1, every: [], weeks: {} };
+  try {
+    const raw = localStorage.getItem(WKKEY);
+    if (raw) {
+      const d = JSON.parse(raw), okDay = (x) => Number.isInteger(x) && x >= 0 && x <= 6;
+      if (d && typeof d === "object") {
+        if (Array.isArray(d.every)) WK.every = d.every.filter((r) => r && WK_PLAN[r.id] != null && okDay(r.d) && Number.isInteger(r.from) && r.from >= 1 && r.from <= 9)
+          .map((r) => ({ from: r.from, id: r.id, d: r.d }));
+        if (d.weeks && typeof d.weeks === "object") Object.keys(d.weeks).forEach((k) => {
+          const wk = +k, o = d.weeks[k], m = {};
+          if (!(Number.isInteger(wk) && wk >= 1 && wk <= 10) || !o || typeof o !== "object") return;
+          Object.keys(o).forEach((id) => { if (WK_PLAN[id] != null && okDay(o[id])) m[id] = o[id]; });
+          if (Object.keys(m).length) WK.weeks[wk] = m;
+        });
+      }
+    }
+  } catch (e) {}
+  const wkSave = () => { try { localStorage.setItem(WKKEY, JSON.stringify(WK)); } catch (e) {} };
+  const wkCopy = (st) => JSON.parse(JSON.stringify(st));
+  const wkHasMoves = () => WK.every.length > 0 || Object.keys(WK.weeks).length > 0;
+  const homeWeek = () => Math.min(planWeek(), 10);
+  // Day (0 = Mon) of each session in week w. After the race (w > 10) the "every week" moves still give the days.
+  function wkDays(w, st) {
+    st = st || WK;
+    const ww = Math.max(1, w), race = ww === 10, m = Object.assign({}, race ? WK_PLAN10 : WK_PLAN);
+    if (!race) st.every.forEach((r) => { if (r.from <= ww && m[r.id] != null) m[r.id] = r.d; });
+    const o = st.weeks[ww] || {};
+    Object.keys(o).forEach((id) => { if (m[id] != null && !(race && id === "long")) m[id] = o[id]; });
+    return m;
+  }
+  function wkSameAsPlan(w) { const m = wkDays(w), p = w === 10 ? WK_PLAN10 : WK_PLAN; return Object.keys(p).every((id) => m[id] === p[id]); }
+  // A strength session's day in week w, or null (Strength 2 in race week)
+  function sessDay(w, s) { const d = wkDays(w)[s === "A" ? "s1" : "s2"]; return d == null ? null : d; }
+  // Moves session id to day d in week w, for this week only ("week") or every week from w on ("every", weeks 1–9). Changes st and returns it.
+  function wkApply(st, w, id, d, scope) {
+    if (scope === "every" && w <= 9) {
+      st.every = st.every.filter((r) => !(r.id === id && r.from >= w));
+      st.every.push({ from: w, id: id, d: d });
+      const o = st.weeks[w];
+      if (o) { delete o[id]; if (!Object.keys(o).length) delete st.weeks[w]; }
+    } else (st.weeks[w] = st.weeks[w] || {})[id] = d;
+    return st;
+  }
+  // The session to pick when you open Run or Strength: today's (one not done yet first), then the next one this week
+  // not done yet, then the latest earlier one this week not done yet. test chooses which sessions count.
+  function wkPick(w, test) {
+    const ww = Math.min(Math.max(1, w), 10), sched = weekSchedule(ww), di = beforePlan() ? 0 : dayIndex();
+    const list = (a, b) => { const out = []; for (let d = a; d <= b; d++) sched[d].forEach((it) => { if (it.id && test(it)) out.push(it); }); return out; };
+    const today = list(di, di), undone = (a) => a.find((it) => !isDone(it, ww));
+    return undone(today) || today[0] || undone(list(di + 1, 6)) || undone(list(0, di - 1).reverse()) || null;
+  }
+
+  // Training rules. Each problem is one line under the day it shows on; nothing is blocked.
+  // 1. Intervals and the long run (the race in week 10) on back-to-back days, including Sunday into the next Monday.
+  // 2. Padel or Strength 2 the day before intervals or the long run.
+  // 3. Two hard sessions on one day. Hard: Strength 1, Strength 2, intervals, the long run, padel. Easy runs aren't hard.
+  // None of these fire for the plan as written, in any week.
+  const WK_HARD = { s1: 1, s2: 1, int: 1, long: 1, pad: 1 };
+  function wkIdsByDay(w, st) {
+    if (w < 1 || w > 10) return null;
+    const items = weekItems(w), days = wkDays(w, st), out = [[], [], [], [], [], [], []];
+    WK_ORDER.forEach((id) => { if (items[id]) out[days[id]].push(id); });
+    return out;
+  }
+  const wkWord = (id, w) => (id === "long" ? (w === 10 ? "the race" : "the long run") : id === "int" ? "intervals" : id === "pad" ? "padel" : WK_NAME[id]);
+  const capFirst = (s) => s.charAt(0).toUpperCase() + s.slice(1);
+  const andList = (a) => (a.length < 2 ? a.join("") : a.slice(0, -1).join(", ") + " and " + a[a.length - 1]);
+  function wkWarnings(w, st) {
+    const ww = Math.min(Math.max(1, w), 10), out = [[], [], [], [], [], [], []];
+    const cur = wkIdsByDay(ww, st), prev = wkIdsByDay(ww - 1, st), next = wkIdsByDay(ww + 1, st);
+    const at = (p) => (p < 0 ? (prev ? prev[6] : []) : p > 6 ? (next ? next[0] : []) : cur[p]);
+    for (let p = -1; p <= 6; p++) {
+      const a = at(p), b = at(p + 1), wa = p < 0 ? ww - 1 : ww, wb = p + 1 > 6 ? ww + 1 : ww;
+      b.forEach((y) => {
+        if (y !== "int" && y !== "long") return;
+        const xs = a.filter((x) => x === "pad" || x === "s2" || (x === "int" && y === "long") || (x === "long" && y === "int"));
+        if (!xs.length) return;
+        const before = andList(xs.map((x) => wkWord(x, wa)));
+        if (p + 1 <= 6) out[p + 1].push(capFirst(wkWord(y, wb)) + " the day after " + before + (p < 0 ? " last Sunday" : ""));
+        else out[6].push(capFirst(before) + " today, then " + wkWord(y, wb) + " next Monday");
+      });
+    }
+    cur.forEach((ids, d) => {
+      const hard = ids.filter((id) => WK_HARD[id]);
+      if (hard.length >= 2) out[d].push((["", "", "Two", "Three", "Four", "Five"][hard.length] || hard.length) + " hard sessions on one day: " + andList(hard.map((id) => wkWord(id, ww))));
+    });
+    return out;
   }
 
   // =====================================================================
@@ -2260,13 +2403,15 @@ void main(){
     R = null; ui.view = "home"; ui.confirmEnd = false;
     render();
   }
+  // Run type and easy run picked when you open Run: from your week as arranged (see wkPick)
   function defaultRunKind() {
-    const d = dayIndex();
-    if (d === 1) return "intervals";
-    if (d === 5 || d === 6) return "long";
-    return "easy";
+    const it = wkPick(homeWeek(), (x) => x.t === "easy" || x.t === "intervals" || x.t === "long");
+    return it ? it.t : "easy";
   }
-  const defaultEasyVar = () => (dayIndex() === 3 || dayIndex() === 4 ? "thu" : "mon");
+  function defaultEasyVar() {
+    const it = wkPick(homeWeek(), (x) => x.t === "easy");
+    return it ? it.v : "mon";
+  }
 
   // Touch lock
   let holdTimer = null;
@@ -2318,7 +2463,7 @@ void main(){
   }
   const sessMins = (type, w) => Math.round(sessSecs(type, w) / 60);
   function weekNote(w, t) {
-    if (w === 10 && t === "B") return "Race week has no Strength 2. Do Strength 1 on Monday, then keep your legs fresh.";
+    if (w === 10 && t === "B") return "Race week has no Strength 2. Do Strength 1 on " + DAYS[sessDay(10, "A")] + ", then keep your legs fresh.";
     if (w === 10) return "Race week: 2 rounds of everything with 3–4 reps in reserve. Legs 20% lighter, upper body the same weight.";
     if (isLight(w)) return "Lighter week: same weights, 2 rounds of every pair, 3–4 reps in reserve.";
     if (w > 10) return "Plan complete. Same rule: hit the top of the range on every set, then add 2 kg.";
@@ -2365,9 +2510,8 @@ void main(){
   }
   function defaultType(w) {
     if (w === 10) return "A";
-    const d = dayIndex();
-    if (d === 0) return "A";
-    if (d === 3) return "B";
+    if (w < 10) { const it = wkPick(w, (x) => x.t === "strength"); if (it) return it.s; }
+    else { const d = dayIndex(), m = wkDays(w); if (d === m.s1) return "A"; if (d === m.s2) return "B"; } // after the race
     const ss = S.sessions;
     if (!ss.length) return "A";
     return ss[ss.length - 1].type === "A" ? "B" : "A";
@@ -2802,7 +2946,8 @@ void main(){
   // =====================================================================
   const app = $("app");
   const ui = { view: "home", rKind: null, rWeek: null, rVar: null, sType: null, sWeek: null, preview: null, confirmEnd: false, locked: false,
-               lastRun: null, lastLift: null, copyText: null, lastRoute: null, hl: null, doneFrom: null, gpx: null, gpxMsg: "" };
+               lastRun: null, lastLift: null, copyText: null, lastRoute: null, hl: null, doneFrom: null, gpx: null, gpxMsg: "",
+               wkEdit: false, wkUndo: [] }; // Edit week is on; earlier arrangements for Undo (this visit only)
   // Which finish screen is open, kept for this browser tab only (sessionStorage, not the saved runs), so if iPhone
   // reloads the page while a run's finish screen is open, it comes back. Ignored after 30 minutes.
   const OPEN_KEY = "sub41-v2-open-run";
@@ -2833,6 +2978,7 @@ void main(){
     const t = $("rHistTitle"); if (t && t.scrollIntoView) t.scrollIntoView({ block: "start" });
   }
   function render() {
+    if (ui.view !== "home") wkLeaveHome();
     if (location.hash === "#figures") return renderGallery();
     document.body.classList.remove("is-paused");
     rememberOpen();
@@ -2854,12 +3000,15 @@ void main(){
     if (it.t === "easy") { const p = easyPlan(w, it.v); return "About " + Math.round(contEst(p) / 60) + " min at 5:15–5:45/km"; }
     if (it.t === "intervals") return "About " + Math.round(iEst(intervalPlan(w)) / 60) + " min with warm-up and warm-down";
     if (it.t === "long") { const p = longPlan(w); return p.kind === "race" ? "Goal 40:45, 4:05/km" : "About " + Math.round(contEst(p) / 60) + " min"; }
+    if (it.t === "padel") return "Counts as a hard session";
     return "";
   }
   function renderHome() {
     document.body.setAttribute("data-phase", "idle");
+    // Re-drawing home over home (after a move, Undo or Reset) keeps your place on the page
+    const prevView = app.querySelector('.view.scroll[aria-labelledby="homeTitle"]'), keepTop = prevView ? prevView.scrollTop : 0;
     const pre = beforePlan(), w = Math.min(planWeek(), 10), di = pre ? 0 : dayIndex(), sched = weekSchedule(w);
-    const todayItems = pre ? [] : sched[di];
+    const todayItems = pre ? [] : sched[di], edit = !!ui.wkEdit, warns = wkWarnings(w);
     let h = '<section class="view scroll" aria-labelledby="homeTitle">';
     h += '<header><p class="label">Sub-41 v2 · ' + (pre ? "Week 1 starts Mon 16 Nov" : shortWeek(planWeek()) + (isLight(w) ? " · lighter" : w === 10 ? " · race week" : "")) + "</p>" +
       '<h1 class="title" id="homeTitle">' + (pre ? "Ready" : DAYS[di]) + "</h1></header>";
@@ -2874,24 +3023,39 @@ void main(){
       const done = isDone(it, w);
       let btn = "";
       if (it.t === "strength") btn = '<button type="button" class="btn small primary" data-act="go-lift" data-s="' + it.s + '">Start</button>';
-      else if (it.t !== "note") btn = '<button type="button" class="btn small primary" data-act="go-run" data-k="' + it.t + '"' + (it.v ? ' data-v="' + it.v + '"' : "") + ">Start</button>";
+      else if (it.t !== "note" && it.t !== "padel") btn = '<button type="button" class="btn small primary" data-act="go-run" data-k="' + it.t + '"' + (it.v ? ' data-v="' + it.v + '"' : "") + ">Start</button>";
       h += '<div class="today-item"><div><p class="what">' + esc(it.label) + '</p><p class="sub">' + esc(itemSub(it, w) || (it.label === "Padel" ? "Counts as a hard session" : "Recovery")) + "</p></div>" +
         (done ? '<span class="done-tag">Done ✓</span>' : btn) + "</div>";
     });
     h += "</div>";
     h += '<div class="choices"><button type="button" class="choice" data-act="go-run"><span class="big-word">Run</span><span class="sub">Easy, intervals, long run</span></button>' +
       '<button type="button" class="choice" data-act="go-lift"><span class="big-word">Strength</span><span class="sub">Strength 1 or 2</span></button></div>';
-    h += '<section aria-labelledby="weekTitle"><h2 class="section-title" id="weekTitle">' + (pre ? "Week 1" : "This week") + '</h2><ul class="week-list">';
+    h += '<section aria-labelledby="weekTitle" id="weekSec"><div class="week-head"><h2 class="section-title" id="weekTitle">' + (pre ? "Week 1" : "This week") + "</h2>" +
+      '<button type="button" class="btn small' + (edit ? " primary" : "") + '" data-act="' + (edit ? "wk-done" : "wk-edit") + '">' + (edit ? "Done" : "Edit week") + "</button></div>";
+    if (edit) h += '<p class="wk-help">Drag ≡ to another day, or tap a session to pick a day.' + (w === 10 ? " Race week: moves are for this week only, and the race stays put." : "") + "</p>";
+    h += '<ul class="week-list' + (edit ? " editing" : "") + '" id="weekList">';
     sched.forEach((items, d) => {
       const today = !pre && d === di;
-      h += '<li class="' + (today ? "is-today" : "") + '"><span class="d">' + DAYS3[d] + '</span><span class="w">' +
-        items.map((it) => '<span class="' + (it.t === "note" ? "muted" : "") + '">' + esc(it.label) + (isDone(it, w) ? ' <span class="tick">✓</span>' : "") + "</span>").join("") +
-        '</span><span class="soft">' + esc(fmtDay(dateOf(w, d)).replace(/^\w+ /, "")) + "</span></li>";
+      h += '<li class="' + (today ? "is-today" : "") + '" data-day="' + d + '"><span class="d">' + DAYS3[d] + '</span><span class="w">';
+      items.forEach((it) => {
+        const tick = isDone(it, w) ? ' <span class="tick">✓</span>' : "";
+        if (edit && it.id && !it.fixed) {
+          h += '<span class="wk-item" data-id="' + it.id + '"><button type="button" class="wk-name" data-act="wk-pick" data-id="' + it.id + '">' + esc(it.label) + tick + "</button>" +
+            '<span class="wk-handle" data-act="wk-pick" data-id="' + it.id + '" aria-hidden="true">≡</span></span>';
+        } else if (edit) h += '<span class="wk-still' + (it.t === "note" ? " muted" : "") + '">' + esc(it.label) + tick + (it.fixed ? '<span class="wk-fixed">· stays put</span>' : "") + "</span>";
+        else h += '<span class="' + (it.t === "note" ? "muted" : "") + '">' + esc(it.label) + tick + "</span>";
+      });
+      warns[d].forEach((m) => { h += '<span class="wk-warn">⚠︎ ' + esc(m) + "</span>"; });
+      h += '</span><span class="soft dt">' + esc(fmtDay(dateOf(w, d)).replace(/^\w+ /, "")) + "</span></li>";
     });
-    h += "</ul></section>";
+    h += "</ul>";
+    if (edit) h += '<div class="wk-bar"><button type="button" class="btn small" data-act="wk-undo"' + (ui.wkUndo.length ? "" : " disabled") + ">Undo</button>" +
+      '<button type="button" class="btn small" data-act="wk-reset"' + (wkHasMoves() ? "" : " disabled") + ">Reset to plan</button></div>";
+    h += "</section>";
     h += '<p class="fine">Use this on your iPhone for every workout so your runs and weights stay in one place. Keep the screen on during workouts.</p>';
     h += "</section>";
     app.innerHTML = h;
+    if (keepTop) { const v = app.querySelector(".view.scroll"); if (v) v.scrollTop = keepTop; }
   }
 
   // ----- Run setup -----
@@ -2920,9 +3084,11 @@ void main(){
       [["easy", "Easy"], ["intervals", "Intervals"], ["long", w === 10 ? "Race" : "Long"]].map(([k, l]) => '<button type="button" data-act="rkind" data-k="' + k + '" aria-pressed="' + (kind === k) + '">' + l + "</button>").join("") + "</div>";
     h += '<div class="fields"><div class="field"><label class="label" for="rWeekSel">Plan week</label><div class="select-wrap"><select id="rWeekSel">' + opts + "</select></div></div>";
     if (kind === "easy") {
-      const v = ui.rVar || defaultEasyVar();
-      h += '<div class="field"><span class="label" id="varLbl">Day</span><div class="seg" role="group" aria-labelledby="varLbl">' +
-        '<button type="button" data-act="rvar" data-v="mon" aria-pressed="' + (v === "mon") + '">Mon</button><button type="button" data-act="rvar" data-v="thu" aria-pressed="' + (v === "thu") + '">Thu</button></div></div>';
+      // One button per easy run, named by its day in your week; if both are on the same day, "Easy" and "Strides"
+      const v = ui.rVar || defaultEasyVar(), m = wkDays(w), same = m.e1 === m.e2;
+      const ev = [["mon", m.e1, "Easy"], ["thu", m.e2, "Strides"]].sort((a, b) => a[1] - b[1]);
+      h += '<div class="field"><span class="label" id="varLbl">' + (same ? "Run" : "Day") + '</span><div class="seg" role="group" aria-labelledby="varLbl">' +
+        ev.map((x) => '<button type="button" data-act="rvar" data-v="' + x[0] + '" aria-pressed="' + (v === x[0]) + '">' + (same ? x[2] : DAYS3[x[1]]) + "</button>").join("") + "</div></div>";
     }
     h += "</div>";
     h += '<div class="session">';
@@ -3621,17 +3787,19 @@ void main(){
   function renderLiftSetup() {
     document.body.setAttribute("data-phase", "idle");
     const auto = planWeek(), w = ui.sWeek || auto, t = ui.sType || defaultType(w), Sx = SESSIONS[t], pre = beforePlan();
+    // Days in your week as arranged. Race week has no Strength 2, so its label shows its usual (every-week) day, as before.
+    const dA = sessDay(w, "A"), dB = w === 10 ? wkDays(9, { every: WK.every, weeks: {} }).s2 : sessDay(w, "B"), dT = t === "A" ? dA : dB;
     let h = '<section class="view scroll" aria-labelledby="liftTitle">' + backLink();
     h += '<header><p class="label">Sub-41 plan · ' + shortWeek(w) + '</p><h1 class="title" id="liftTitle">' + esc(Sx.name) +
-      '</h1><p class="lede">' + esc(Sx.day) + " · " + esc(Sx.focus) + ". Up to " + sessMins(t, w) + " minutes with the warm-up. The voice counts every rep, tells you what's next and which weight to use.</p></header>";
+      '</h1><p class="lede">' + esc(DAYS[dT]) + " · " + esc(Sx.focus) + ". Up to " + sessMins(t, w) + " minutes with the warm-up. The voice counts every rep, tells you what's next and which weight to use.</p></header>";
     if (C) h += '<div class="notice"><p class="notice-title">Unfinished: ' + esc(SESSIONS[C.type].name) + '</p><div class="notice-actions"><button type="button" class="btn primary" data-act="lift-resume">Resume</button>' +
       (C.sets.length ? '<button type="button" class="btn" data-act="lift-close">Save and close</button>' : '<button type="button" class="btn" data-act="lift-discard">Discard</button>') + "</div></div>";
     let opts = "";
     for (let i = 1; i <= 10; i++) opts += '<option value="' + i + '"' + (i === w ? " selected" : "") + ">Week " + i + (isLight(i) ? " · lighter" : i === 10 ? " · race" : "") + (i === auto && !pre ? " (now)" : "") + "</option>";
     if (auto > 10) opts += '<option value="' + auto + '"' + (w === auto ? " selected" : "") + ">After the race (now)</option>";
     h += '<div class="fields"><div class="field"><span class="label" id="sessLbl">Session</span><div class="seg" role="group" aria-labelledby="sessLbl">' +
-      '<button type="button" data-act="stype" data-type="A" aria-pressed="' + (t === "A") + '">1 · Mon</button>' +
-      '<button type="button" data-act="stype" data-type="B" aria-pressed="' + (t === "B") + '">2 · Thu</button></div></div>' +
+      '<button type="button" data-act="stype" data-type="A" aria-pressed="' + (t === "A") + '">1 · ' + DAYS3[dA] + "</button>" +
+      '<button type="button" data-act="stype" data-type="B" aria-pressed="' + (t === "B") + '">2 · ' + DAYS3[dB] + "</button></div></div>" +
       '<div class="field"><label class="label" for="sWeekSel">Plan week</label><div class="select-wrap"><select id="sWeekSel">' + opts + "</select></div></div></div>";
     h += '<p class="week-note">' + esc(weekNote(w, t)) + '</p><div class="plan">';
     Sx.pairs.forEach((pair, pi) => {
@@ -3780,17 +3948,28 @@ void main(){
     const el = $("elapsed"); if (el && C) el.textContent = fmtClock(Date.now() - C.startedAt);
     const bn = $("banner"); if (bn && ui.view === "lift") bn.hidden = !wakeAtRisk();
   }
+  // The next strength session in your week as arranged: one still to do this week (from today on), otherwise next week's first
   function nextHint(r) {
     if (r.week === 10) return "Race week strength is done. Keep your legs fresh and run well.";
-    if (r.type === "A") return "Next strength session: Strength 2 on Thursday.";
-    const nw = r.week + 1;
-    if (isLight(nw)) return "Next strength session: Strength 1 on Monday. Next week is lighter: same weights, fewer sets.";
-    if (nw === 10) return "Next strength session: Strength 1 on Monday. It's race week, so legs go lighter.";
-    return "Next strength session: Strength 1 on Monday. Any lift where you hit the top of the range on every set goes up 2 kg.";
+    const w = r.week, say = (s, d) => "Next strength session: " + SESSIONS[s].name + " on " + DAYS[d] + ".";
+    if (w > 10) {
+      const m = wkDays(w);
+      return r.type === "A" ? say("B", m.s2) : say("A", m.s1) + " Any lift where you hit the top of the range on every set goes up 2 kg.";
+    }
+    const sched = weekSchedule(w), from = w === planWeek() && !beforePlan() ? dayIndex() : 0;
+    for (let d = from; d < 7; d++) { const it = sched[d].find((x) => x.t === "strength" && !isDone(x, w)); if (it) return say(it.s, d); }
+    const nw = w + 1, ns = weekSchedule(nw);
+    let lead = say("A", 0);
+    for (let d = 0; d < 7; d++) { const it = ns[d].find((x) => x.t === "strength"); if (it) { lead = say(it.s, d); break; } }
+    if (isLight(nw)) return lead + " Next week is lighter: same weights, fewer sets.";
+    if (nw === 10) return lead + " It's race week, so legs go lighter.";
+    return lead + " Any lift where you hit the top of the range on every set goes up 2 kg.";
   }
   function renderLiftDone() {
-    const r = ui.lastLift, v = r.type === "A" ? "mon" : "thu", ew = Math.min(r.week, 10);
-    const offerRun = !(ew === 10 && r.type === "B") && !isDone({ t: "easy", v: v }, ew);
+    // Offers the easy run that's on the same day as this strength session in your week, if it isn't done yet
+    const r = ui.lastLift, ew = Math.min(r.week, 10), sd = sessDay(ew, r.type);
+    const pair = sd == null ? null : weekSchedule(ew)[sd].find((x) => x.t === "easy" && !isDone(x, ew));
+    const offerRun = !!pair, v = pair ? pair.v : "mon";
     document.body.setAttribute("data-phase", "done");
     let h = '<section class="view done" aria-labelledby="doneTitle"><h1 class="done-title" id="doneTitle">' + (r.complete ? "Logged." : "Saved.") + "</h1>" +
       '<p class="done-meta">' + esc(sessName(r)) + " · " + esc(shortWeek(r.week)) + " · " + Math.max(1, Math.round(r.durationSec / 60)) + ' min</p><ul class="summary">';
@@ -3845,6 +4024,16 @@ void main(){
         startGps(); render(); break;
       }
       case "go-lift": ui.view = "liftSetup"; ui.sType = b.getAttribute("data-s") || null; ui.preview = null; render(); break;
+      // rearranging the week
+      case "wk-edit": {
+        ui.wkEdit = true; render();
+        const sec = $("weekSec"); if (sec && sec.scrollIntoView) sec.scrollIntoView({ block: "start", behavior: reduceMotion ? "auto" : "smooth" });
+        break;
+      }
+      case "wk-done": ui.wkEdit = false; render(); break;
+      case "wk-pick": if (Date.now() - wkDragEndAt > 450) wkOpen(b.getAttribute("data-id"), null); break;
+      case "wk-undo": wkUndoLast(); break;
+      case "wk-reset": wkS = { mode: "reset", at: Date.now() }; wkSheetPaint(); break;
       // run setup
       case "rkind": ui.rKind = b.getAttribute("data-k"); render(); break;
       case "rvar": ui.rVar = b.getAttribute("data-v"); render(); break;
@@ -3921,8 +4110,195 @@ void main(){
     }
     if (C && ui.view === "lift") { wakeCheck(); sTick(); }
   });
+
+  // =====================================================================
+  // Rearranging the week (v2): the Move sheet, the Undo bar and dragging
+  // =====================================================================
+  // Both sit outside the page so a re-draw of home doesn't close them
+  const wkSheetEl = document.createElement("div"), wkToastEl = document.createElement("div");
+  wkSheetEl.className = "wk-sheet-wrap"; wkSheetEl.hidden = true;
+  wkToastEl.className = "wk-toast"; wkToastEl.hidden = true; wkToastEl.setAttribute("role", "status");
+  document.body.appendChild(wkSheetEl); document.body.appendChild(wkToastEl);
+  let wkS = null, wkToastTimer = null, wkDragEndAt = 0, DRAG = null;
+  const wkName = (id, w) => (id === "long" && w === 10 ? "The race" : WK_NAME[id]);
+  // Warnings a move would add (to this week, or across into next week) that aren't there now, for either choice
+  function wkNewWarnings(id, d) {
+    const w = homeWeek(), key = (st) => { const o = []; wkWarnings(w, st).forEach((a, day) => a.forEach((m) => o.push(day + "|" + m))); return o; };
+    const now = new Set(key()), out = [];
+    (w <= 9 ? ["week", "every"] : ["week"]).forEach((sc) => key(wkApply(wkCopy(WK), w, id, d, sc)).forEach((k) => {
+      const m = k.slice(k.indexOf("|") + 1);
+      if (!now.has(k) && !out.includes(m)) out.push(m);
+    }));
+    return out;
+  }
+  function wkOpen(id, d) {
+    const it = weekItems(homeWeek())[id];
+    if (!it || it.fixed) return;
+    wkS = { mode: "move", id: id, d: d == null ? null : d, at: Date.now() };
+    wkSheetPaint();
+  }
+  function wkSheetPaint() {
+    if (!wkS) { wkSheetEl.hidden = true; wkSheetEl.innerHTML = ""; return; }
+    const w = homeWeek(), race = w === 10;
+    let h = '<div class="wk-scrim" data-act="wk-cancel"></div><div class="wk-sheet" role="dialog" aria-modal="true" aria-labelledby="wkSheetTitle" tabindex="-1">';
+    if (wkS.mode === "reset") {
+      h += '<h2 class="wk-sheet-title" id="wkSheetTitle">Reset to plan</h2>';
+      if (race) h += '<p class="soft">Put race week back as planned.</p><button type="button" class="btn primary" data-act="wk-reset-go" data-scope="week"' + (wkSameAsPlan(w) ? " disabled" : "") + ">This week only</button>";
+      else h += '<p class="soft">This week only puts this week back as planned; your every-week moves carry on from next week. Every week clears all your moves.</p>' +
+        '<button type="button" class="btn primary" data-act="wk-reset-go" data-scope="week"' + (wkSameAsPlan(w) ? " disabled" : "") + ">This week only</button>" +
+        '<button type="button" class="btn" data-act="wk-reset-go" data-scope="all">Every week</button>';
+    } else {
+      const cur = wkDays(w)[wkS.id];
+      h += '<h2 class="wk-sheet-title" id="wkSheetTitle">' + esc(wkName(wkS.id, w)) + '</h2><p class="soft">Now on ' + DAYS[cur] + ". Move it to:</p>";
+      h += '<div class="wk-days" role="group" aria-label="Move to">' + DAYS3.map((x, d) => '<button type="button" data-act="wk-day" data-d="' + d + '" aria-pressed="' + (wkS.d === d) + '"' +
+        (d === cur ? " disabled" : "") + ">" + x + (d === cur ? "<small>now</small>" : "") + "</button>").join("") + "</div>";
+      if (wkS.d != null) {
+        const nw = wkNewWarnings(wkS.id, wkS.d);
+        h += nw.length ? '<p class="wk-warn-line">⚠︎ ' + esc(nw.join(". ")) + ".</p>" : '<p class="soft">That fits your training rules.</p>';
+        h += '<button type="button" class="btn primary" data-act="wk-scope" data-scope="week">This week only</button>';
+        if (race) h += '<p class="fine">Race week has its own layout, so moves here are for this week only.</p>';
+        else h += '<button type="button" class="btn" data-act="wk-scope" data-scope="every">Every week from now</button>' +
+          '<p class="fine">' + (w === 9 ? "Every week means week 9 here: race week keeps its own layout." : "Every week means weeks " + w + " to 9. Race week keeps its own layout.") + "</p>";
+      }
+    }
+    h += '<button type="button" class="link-btn wk-cancel" data-act="wk-cancel">Cancel</button></div>';
+    wkSheetEl.innerHTML = h; wkSheetEl.hidden = false;
+    const sh = wkSheetEl.querySelector(".wk-sheet"); if (sh) { try { sh.focus({ preventScroll: true }); } catch (e) {} }
+  }
+  function wkSheetClose() { wkS = null; wkSheetPaint(); }
+  wkSheetEl.addEventListener("click", (e) => {
+    const b = e.target.closest("[data-act]");
+    if (!b || !wkS || Date.now() - wkS.at < 400) return; // ignores the tap that opened it
+    const act = b.getAttribute("data-act"), s = wkS;
+    if (act === "wk-cancel") wkSheetClose();
+    else if (act === "wk-day") { s.d = +b.getAttribute("data-d"); wkSheetPaint(); }
+    else if (act === "wk-scope" && s.d != null) { wkSheetClose(); wkMove(s.id, s.d, b.getAttribute("data-scope")); }
+    else if (act === "wk-reset-go") { wkSheetClose(); wkReset(b.getAttribute("data-scope")); }
+  });
+  document.addEventListener("keydown", (e) => { if (e.key === "Escape" && wkS) wkSheetClose(); });
+  function wkToast(msg, undo) {
+    clearTimeout(wkToastTimer);
+    wkToastEl.innerHTML = "<span>" + esc(msg) + "</span>" + (undo ? '<button type="button" data-act="wk-undo">Undo</button>' : "");
+    wkToastEl.hidden = false;
+    wkToastTimer = setTimeout(() => { wkToastEl.hidden = true; }, undo ? 10000 : 3000);
+  }
+  wkToastEl.addEventListener("click", (e) => { if (e.target.closest('[data-act="wk-undo"]')) wkUndoLast(); });
+  function wkCommit(next, msg) {
+    ui.wkUndo.push(wkCopy(WK)); if (ui.wkUndo.length > 30) ui.wkUndo.shift();
+    WK = next; wkSave(); wkToast(msg, true); render();
+  }
+  function wkMove(id, d, scope) {
+    const w = homeWeek(), every = scope === "every" && w <= 9;
+    wkCommit(wkApply(wkCopy(WK), w, id, d, every ? "every" : "week"), wkName(id, w) + " moved to " + DAYS[d] + (every ? ", every week from now." : ", this week only."));
+  }
+  function wkReset(scope) {
+    const w = homeWeek(), next = wkCopy(WK);
+    if (scope === "all") { next.every = []; next.weeks = {}; }
+    else {
+      delete next.weeks[w];
+      // every-week moves that have started would still show this week, so this week gets the plan's days as its own
+      if (w <= 9 && next.every.some((r) => r.from <= w)) next.weeks[w] = Object.assign({}, WK_PLAN);
+    }
+    wkCommit(next, scope === "all" ? "All your moves are cleared." : "This week is back to the plan.");
+  }
+  function wkUndoLast() {
+    if (!ui.wkUndo.length) return;
+    WK = ui.wkUndo.pop(); wkSave(); wkToast("Undone.", false);
+    if (ui.view === "home") render();
+  }
+  function wkLeaveHome() {
+    ui.wkEdit = false;
+    if (DRAG) wkDragEnd(null, true);
+    if (wkS) wkSheetClose();
+    clearTimeout(wkToastTimer); wkToastEl.hidden = true;
+  }
+
+  // Dragging from the ≡ handle with pointer events (HTML5 drag and drop isn't reliable on iPhone). The handle has
+  // touch-action: none, so a touch that starts on it drags straight away and the rest of the page still scrolls normally.
+  // The lifted session floats above your finger; the day under your finger lights up; near the top or bottom the page scrolls.
+  // Letting go on another day opens the Move sheet with that day picked, so nothing changes until you choose.
+  function wkDayAt(y) {
+    const lis = document.querySelectorAll(".week-list li[data-day]");
+    for (let i = 0; i < lis.length; i++) { const r = lis[i].getBoundingClientRect(); if (y >= r.top && y < r.bottom) return +lis[i].getAttribute("data-day"); }
+    return null;
+  }
+  function wkDragPaint() {
+    const D = DRAG, g = D && D.ghost;
+    if (!g) return;
+    const x = Math.max(8, Math.min(D.x - g.offsetWidth / 2, window.innerWidth - g.offsetWidth - 8)), y = D.y - g.offsetHeight - 30;
+    g.style.transform = "translate3d(" + Math.round(x) + "px," + Math.round(y) + "px,0)";
+    const d = wkDayAt(D.y);
+    if (d === D.over) return;
+    D.over = d;
+    document.querySelectorAll(".week-list li.wk-over").forEach((li) => li.classList.remove("wk-over"));
+    const li = d == null ? null : document.querySelector('.week-list li[data-day="' + d + '"]');
+    if (li) li.classList.add("wk-over");
+  }
+  function wkDragFrame() {
+    const D = DRAG;
+    if (!D || !D.moved) return;
+    const sc = D.scroller;
+    if (sc) {
+      const r = sc.getBoundingClientRect(), top = Math.max(r.top, 0), bot = Math.min(r.bottom, window.innerHeight), edge = 80;
+      let v = 0;
+      if (D.y < top + edge) v = -Math.min(18, (top + edge - D.y) / edge * 18);
+      else if (D.y > bot - edge) v = Math.min(18, (D.y - (bot - edge)) / edge * 18);
+      if (v) { const was = sc.scrollTop; sc.scrollTop = was + v; if (sc.scrollTop !== was) { D.over = -1; wkDragPaint(); } }
+    }
+    D.raf = requestAnimationFrame(wkDragFrame);
+  }
+  function wkDragStart(e, handle) {
+    const id = handle.getAttribute("data-id"), item = handle.closest(".wk-item");
+    if (!id || !item) return;
+    e.preventDefault(); // no text selection or iOS callout menu
+    try { handle.setPointerCapture(e.pointerId); } catch (x) {}
+    DRAG = { id: id, pid: e.pointerId, handle: handle, item: item, x0: e.clientX, y0: e.clientY, x: e.clientX, y: e.clientY, moved: false, over: null,
+             ghost: null, raf: 0, scroller: app.querySelector(".view.scroll"), from: wkDays(homeWeek())[id] };
+  }
+  function wkDragMove(e) {
+    const D = DRAG;
+    if (!D || e.pointerId !== D.pid) return;
+    e.preventDefault();
+    D.x = e.clientX; D.y = e.clientY;
+    if (!D.moved) {
+      if (Math.hypot(D.x - D.x0, D.y - D.y0) < 6) return;
+      D.moved = true;
+      const g = document.createElement("div"), nm = D.item.querySelector(".wk-name");
+      g.className = "wk-ghost"; g.setAttribute("aria-hidden", "true"); g.textContent = nm ? nm.textContent : WK_NAME[D.id];
+      document.body.appendChild(g); D.ghost = g;
+      D.item.classList.add("wk-src"); document.body.classList.add("wk-dragging");
+      D.raf = requestAnimationFrame(wkDragFrame);
+    }
+    wkDragPaint();
+  }
+  function wkDragEnd(e, cancel) {
+    const D = DRAG;
+    if (!D || (e && e.pointerId !== D.pid)) return;
+    DRAG = null; wkDragEndAt = Date.now();
+    cancelAnimationFrame(D.raf);
+    if (D.ghost) D.ghost.remove();
+    D.item.classList.remove("wk-src"); document.body.classList.remove("wk-dragging");
+    document.querySelectorAll(".week-list li.wk-over").forEach((li) => li.classList.remove("wk-over"));
+    try { D.handle.releasePointerCapture(D.pid); } catch (x) {}
+    if (cancel) return;
+    if (!D.moved) { wkOpen(D.id, null); return; } // a tap on the handle: pick a day from the list
+    const d = wkDayAt(D.y);
+    if (d != null && d !== D.from) wkOpen(D.id, d);
+  }
+  app.addEventListener("pointerdown", (e) => {
+    const h = e.target.closest(".wk-handle");
+    if (!h || !ui.wkEdit || DRAG || wkS || e.isPrimary === false || (e.pointerType === "mouse" && e.button !== 0)) return;
+    wkDragStart(e, h);
+  });
+  document.addEventListener("pointermove", wkDragMove, { passive: false });
+  document.addEventListener("pointerup", (e) => wkDragEnd(e, false));
+  document.addEventListener("pointercancel", (e) => wkDragEnd(e, true));
+  document.addEventListener("touchmove", (e) => { if (DRAG) e.preventDefault(); }, { passive: false }); // the page stays still while you drag
+  app.addEventListener("contextmenu", (e) => { if (e.target.closest(".week-list.editing")) e.preventDefault(); });
+
   window.addEventListener("hashchange", render);
-  if (TEST) window.__v2 = { rtEncode: rtEncode, rtDecode: rtDecode, rtSimplify: rtSimplify, rtUnpack: rtUnpack, routeGeo: routeGeo, routeGpx: routeGpx, ui: ui, MV: MV, RT: () => RT, RS: () => RS, openRun: openRun };
+  if (TEST) window.__v2 = { rtEncode: rtEncode, rtDecode: rtDecode, rtSimplify: rtSimplify, rtUnpack: rtUnpack, routeGeo: routeGeo, routeGpx: routeGpx, ui: ui, MV: MV, RT: () => RT, RS: () => RS, openRun: openRun,
+    WK: () => WK, wkWarnings: wkWarnings, weekSchedule: weekSchedule, wkDays: wkDays, defaultRunKind: defaultRunKind, defaultEasyVar: defaultEasyVar, defaultType: defaultType, nextHint: nextHint };
 
   // Back on the finish screen that was open if the page was reloaded (see OPEN_KEY)
   let reopened = false;
