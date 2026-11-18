@@ -2031,17 +2031,37 @@ void main(){
   function iStart(w) {
     const p = intervalPlan(w), t = Date.now();
     R = { mode: "int", kind: "intervals", plan: p, w: w, title: iTitle(p), phases: iBuild(p), i: 0, phaseStart: t, startedAt: t, paused: false, pauseAt: 0,
-          fired: {}, reps: [], cur: null, totalDist: 0, done: false, lastCall: null, note: null };
+          fired: {}, reps: [], cur: null, totalDist: 0, done: false, lastCall: null, note: null,
+          // turn round (v2): distance at the start of this phase, distance and time per kind of phase, the turn, warm-down run on to home
+          phD0: 0, agg: {}, turn: null, homeExt: false, homeSaid: false, tickAt: 0 };
     rtSection(t);
     say("Start workout. Warm up.", true);
     beep(1320, 0.3, 0.3);
   }
   function iTick(t) {
-    const run = R;
+    const run = R, gapLate = R.tickAt > 0 && t - R.tickAt > 5000; // the screen was off: anything due is late
+    R.tickAt = t;
     for (let g = 0; g < 80 && !run.done; g++) {
       const ph = R.phases[R.i], el = t - R.phaseStart;
-      if (ph.dur != null) { if (el >= ph.dur * 1000) { iFinishPhase(R.phaseStart + ph.dur * 1000); continue; } }
-      else {
+      if (ph.dur != null) {
+        const end = ph.dur * 1000;
+        if (el >= end) {
+          // After the turn, the warm-down carries on past its time until you're home (at most HOME_MAX longer)
+          if (ph.type === "cool" && R.turn) {
+            const home = iToHome();
+            if (home > HOME_NEAR && el < end + HOME_MAX * 1000) {
+              if (!R.homeExt) {
+                R.homeExt = true;
+                if (el - end < 4000) say("Warm-down time's up. " + spokenDist(home) + " to home. Keep jogging.", true);
+                if (ui.view === "run") renderRun();
+              }
+              break;
+            }
+            if (R.homeExt) { iFinishPhase(Math.min(t, R.phaseStart + end + HOME_MAX * 1000)); continue; }
+          }
+          iFinishPhase(R.phaseStart + end); continue;
+        }
+      } else {
         // Distance reps end on GPS distance; without GPS they fall back to the target time
         const fb = ph.est * 1000, endAt = gpsHealthy(t) ? 2 * fb : fb;
         if (el >= endAt) { if (R.cur) R.cur.onTime = true; iFinishPhase(R.phaseStart + endAt); continue; }
@@ -2061,6 +2081,13 @@ void main(){
       at("t10", ph.dur - 10, () => say("Interval " + nx.n + " in 10 seconds.", true));
       [3, 2, 1].forEach((k) => at("c" + k, ph.dur - k, () => { say(String(k), true); beep(880, 0.12, 0.25); }));
     }
+    if (iTurnDue(t)) iTurn(t, gapLate);
+    // Back where you started with warm-down time to spare (you turned a little early): said once
+    if (ph.type === "cool" && R.turn && !R.homeExt && !R.homeSaid && gpsHealthy(t) && iToHome() <= HOME_NEAR) {
+      const left = ph.dur - el;
+      R.homeSaid = true;
+      if (left > 20) { const m = Math.max(1, Math.round(left / 60)); say("You're back where you started. " + m + (m === 1 ? " minute" : " minutes") + " of warm-down left: finish here or keep jogging."); }
+    }
   }
   function iTransition(ph, nx) {
     if (ph.type === "warmup") return "End warm-up. Start interval " + nx.n + ".";
@@ -2072,18 +2099,27 @@ void main(){
   function iFinishPhase(endT) {
     const ph = R.phases[R.i];
     if (ph.type === "work") iCloseRep(endT);
+    // distance and time of this phase, for the turn-round estimate
+    const ag = R.agg[ph.type] || (R.agg[ph.type] = { d: 0, t: 0 });
+    ag.d += Math.max(0, R.totalDist - R.phD0); ag.t += Math.max(0, (endT - R.phaseStart) / 1000);
     R.i++;
     const late = Date.now() - endT > 5000;
     if (R.i >= R.phases.length) {
-      if (!late) { say("End workout.", true); beep(660, 0.15, 0.25); setTimeout(() => beep(990, 0.4, 0.3), 180); }
+      if (!late) { say(R.homeExt ? "You're home. End workout." : "End workout.", true); beep(660, 0.15, 0.25); setTimeout(() => beep(990, 0.4, 0.3), 180); }
       finishRun(endT, true);
       return;
     }
     const nx = R.phases[R.i];
-    R.phaseStart = endT; R.fired = {};
+    R.phaseStart = endT; R.fired = {}; R.phD0 = R.totalDist;
     rtSection(endT);
     if (nx.type === "work") { R.cur = { n: nx.n, start: endT, dist: 0, nextMark: SPLIT, markAt: endT, splits: [], onTime: false, skipped: false }; R.lastCall = null; }
-    if (!late) { say(iTransition(ph, nx), true); if (nx.type === "work") beep(1320, 0.35, 0.3); else beep(523, 0.3, 0.25); }
+    // Turning round at the start of this jog: said with the change, "End interval 2. Halfway: turn round now. Start rest 2."
+    const turnNow = !late && iTurnDue(endT);
+    if (turnNow) iTurnMark(endT);
+    if (!late) {
+      say(turnNow ? iTransition(ph, nx).replace(" Start ", " Halfway: turn round now. Start ") : iTransition(ph, nx), true);
+      if (turnNow) midBeep(); else if (nx.type === "work") beep(1320, 0.35, 0.3); else beep(523, 0.3, 0.25);
+    }
     if (ui.view === "run") renderRun();
   }
   function iCloseRep(t) {
@@ -2114,6 +2150,70 @@ void main(){
     }
     rep.dist = d1;
     if (ph.kind === "dist" && d1 >= ph.dist) { rep.dist = ph.dist; iFinishPhase(timeAt(ph.dist)); }
+  }
+
+  // ---------------------------------------------------------------------
+  // Turn round (v2): every interval session can be run out and back. The whole workout's distance is estimated
+  // (the warm-up, jogs and warm-down depend on your pace) and kept up to date from your own paces as you go. You're told
+  // to turn round in the jog nearest halfway, never in the middle of an interval: during a jog if halfway falls in it,
+  // otherwise 25 s before the interval it falls in, or at the start of the jog after it, whichever is nearer halfway.
+  // With long intervals that can be several hundred metres from halfway: turning early, you're home before the warm-down
+  // ends and are told so; turning late, the warm-down runs on until you're home.
+  // After the turn the screen counts the distance home, and the warm-down carries on past its time until you're home.
+  // Needs GPS: with no signal there is no call, and it is said once the signal is back.
+  // ---------------------------------------------------------------------
+  const TURN_EASY = 330, TURN_JOG = 360, TURN_SLOT = 25, HOME_NEAR = 30, HOME_MAX = 15 * 60; // TURN_SLOT: turn this long before an interval, so the call ends before "in 10 seconds"
+  const iToHome = () => (R && R.turn ? Math.max(0, 2 * R.turn.d - R.totalDist) : null);
+  // Paces (s/km) used for what's left: yours once there's enough to go on, otherwise easy 5:30, jogs 6:00, intervals at target
+  function iPaces() {
+    const A = R.agg, own = (a) => (a && a.t >= 60 && a.d >= 150 ? a.t / (a.d / 1000) : null);
+    const easy = own(A.warmup) || own(A.cool) || TURN_EASY, jog = own(A.rest) || Math.max(TURN_JOG, easy + 30);
+    let wt = 0, wd = 0;
+    R.reps.forEach((r) => { if (r.dist >= 50 && !r.skipped) { wt += r.time; wd += r.dist; } });
+    return { warmup: easy, cool: easy, rest: jog, work: wd >= 200 ? wt / (wd / 1000) : ZONES[R.plan.zone].target };
+  }
+  // Where each phase from now on starts and ends (m), and the whole workout's distance
+  function iProject(t) {
+    const P = iPaces(), out = [];
+    let x = R.totalDist;
+    for (let k = R.i; k < R.phases.length; k++) {
+      const ph = R.phases[k], now = k === R.i;
+      const left = ph.type === "work" && ph.kind === "dist" ? (now ? Math.max(0, ph.dist - (R.cur ? R.cur.dist : 0)) : ph.dist)
+        : (now ? Math.max(0, ph.dur - (t - R.phaseStart) / 1000) : ph.dur) / P[ph.type] * 1000;
+      out.push({ k: k, a: now ? R.phD0 : x, b: x + left });
+      x += left;
+    }
+    return { ph: out, total: x };
+  }
+  function iTurnDue(t) {
+    if (!R || R.mode !== "int" || R.turn || R.paused || !gpsHealthy(t)) return false;
+    const ph = R.phases[R.i];
+    if (ph.type === "work" || R.totalDist < 300) return false;
+    const pr = iProject(t), half = pr.total / 2, cur = pr.ph[0], nx = pr.ph[1];
+    if (half <= R.totalDist) return true; // halfway is here, or was in the interval just finished
+    if (half <= cur.b) return false; // halfway comes later in this jog
+    if (!nx || R.phases[nx.k].type !== "work" || half >= nx.b) return false; // halfway is further on
+    // halfway falls in the next interval: turn just before it if that's nearer halfway than the jog after it
+    return half - cur.b < nx.b - half && ph.dur - (t - R.phaseStart) / 1000 <= TURN_SLOT;
+  }
+  function iTurnMark(t) { R.turn = { d: R.totalDist, t: Math.max(0, (t - R.startedAt) / 1000), i: R.i }; }
+  function iTurn(t, late) {
+    iTurnMark(t);
+    midBeep();
+    say(late ? "Turn round now: you're past halfway." : "Halfway. Turn round now. " + spokenDist(R.turn.d) + " in " + spokenTime(R.turn.t) + ".", false, 600);
+    if (ui.view === "run") renderRun();
+  }
+  // Before the run: where the turn should come with the usual paces, for the run setup screen
+  function iTurnPlan(p) {
+    const pace = { warmup: TURN_EASY, cool: TURN_EASY, rest: TURN_JOG, work: ZONES[p.zone].target };
+    let x = 0;
+    const b = iBuild(p).map((q) => { const d = q.type === "work" && q.kind === "dist" ? q.dist : q.dur / pace[q.type] * 1000, r = { q: q, a: x, b: x + d }; x += d; return r; });
+    const half = x / 2, k = Math.max(0, b.findIndex((r) => half < r.b)), r = b[k];
+    const name = (q) => (q.type === "warmup" ? "the warm-up" : q.type === "cool" ? "the warm-down" : "rest " + q.n);
+    if (r.q.type !== "work") return { total: x, at: half, where: "during " + name(r.q) };
+    const prev = b[k - 1], next = b[k + 1];
+    if (prev && (!next || half - r.a < r.b - half)) return { total: x, at: r.a, where: "just before interval " + r.q.n };
+    return { total: x, at: r.b, where: "at the start of " + name(next.q) };
   }
 
   // =====================================================================
@@ -2356,7 +2456,7 @@ void main(){
     unlockAudio();
     if (R.paused) {
       const shift = Date.now() - R.pauseAt;
-      if (R.mode === "int") { R.phaseStart += shift; if (R.cur) { R.cur.start += shift; R.cur.markAt += shift; } }
+      if (R.mode === "int") { R.phaseStart += shift; R.tickAt = 0; if (R.cur) { R.cur.start += shift; R.cur.markAt += shift; } }
       else { R.runStart += shift; R.segStartAt += shift; R.kmAt += shift; R.halfAt += shift; R.qAt += shift; if (R.strideStart != null) R.strideStart += shift; }
       if (R.route) { R.route.pz.push([Math.max(0, R.pauseAt - R.route.t0), Math.max(0, Date.now() - R.route.t0)]); R.route.cut = true; }
       R.paused = false; gps.trail = [];
@@ -2380,6 +2480,7 @@ void main(){
       const reps = R.reps.filter((r) => r.dist > 0 || r.time > 0);
       rec = { kind: "intervals", date: new Date(R.startedAt).toISOString(), w: R.w, title: R.title, zone: R.plan.zone,
               dur: Math.round((endT - R.startedAt) / 1000), dist: Math.round(R.totalDist), reps: reps, complete: complete };
+      if (R.turn) rec.turn = { d: Math.round(R.turn.d), t: Math.round(R.turn.t) }; // where you turned round: distance in m, time in s
       if (!reps.length) rec = null;
     } else {
       const dur = Math.round(((R.paused ? R.pauseAt : endT) - R.runStart) / 1000), dist = Math.round(R.totalDist);
@@ -3099,8 +3200,11 @@ void main(){
       h += '<ol class="steps"><li><span class="what">Warm-up<span>Easy, with 4 × 20 s strides from 8 min</span></span><span class="how">12 min</span></li>' +
         '<li><span class="what">' + p.reps + " intervals of " + esc(fmtWork(p)) + "<span>" + (p.kind === "dist" ? "Each ends on GPS distance" : "Each ends on time") + '</span></span><span class="how">' + fmtPace(z.target) + "/km</span></li>" +
         '<li><span class="what">Rest<span>Jog between intervals</span></span><span class="how">' + (p.rest >= 120 && p.rest % 60 === 0 ? p.rest / 60 + " min" : p.rest + " s") + "</span></li>" +
-        '<li><span class="what">Warm-down<span>Easy</span></span><span class="how">8 min</span></li></ol>';
+        '<li><span class="what">Warm-down<span>Easy, and on until you\'re home if you need longer</span></span><span class="how">8 min</span></li></ol>';
       h += '<p class="total">About ' + Math.round(iEst(p) / 60) + " minutes in total.</p>";
+      const tp = iTurnPlan(p);
+      h += '<p class="session-sub">For an out and back: about ' + fmtKm(tp.total) + " in total, so you'll be told to turn round at about " + fmtKm(tp.at) + ", " + esc(tp.where) +
+        ". Never in the middle of an interval. It goes by your own paces on the day.</p>";
     } else {
       h += '<h2 class="session-name">' + esc(p.title) + "</h2>";
       const sub = p.kind === "race" ? "Goal 40:45. A call every km with your split, average and pace check; distance left in the last 2.5 km." :
@@ -3202,7 +3306,9 @@ void main(){
       h += '<div class="call" id="call" hidden><span class="call-word" id="callWord"></span><span class="call-meta" id="callMeta"></span></div>';
     } else {
       h += '<div class="pace-row"><div class="pace-box"><span class="label">Live pace</span><span class="pace-val" id="livePace">–</span></div>' +
-        '<div class="pace-box"><span class="label">Distance</span><span class="pace-val" id="totDist">0 m</span></div></div>';
+        '<div class="pace-box"><span class="label" id="totLbl">Distance</span><span class="pace-val" id="totDist">0 m</span></div></div>';
+      // turn round (v2): shown for the rest of the jog you turned in
+      h += '<div class="call mid" id="turnCard" hidden><span class="call-word">Turn round</span><span class="call-meta" id="turnMeta"></span></div>';
     }
     h += '<p class="next">' + iNextText(R.i) + "</p></div></div>";
     h += runControls(true) + "</section>";
@@ -3236,9 +3342,24 @@ void main(){
           subText = "Jog easy";
           const last = R.reps[R.reps.length - 1];
           if (last) detText = "Interval " + last.n + ": " + fmtDist(last.dist) + " in " + fmtClock(last.time * 1000) + (last.pace ? ", " + fmtPace(last.pace) + "/km" : "");
-        } else subText = "Easy jog to finish";
+        } else if (R.homeExt) {
+          // warm-down carrying on until you're home
+          const home = iToHome();
+          bigHtml = Math.round(home) + "<small>m to home</small>"; frac = 1; subText = "Easy jog home"; detText = "Warm-down time's up: keep going until you're back";
+        } else subText = R.turn ? "Easy jog home" : "Easy jog to finish";
       }
-      const td = $("totDist"); if (td) td.textContent = fmtDist(R.totalDist);
+      // turn round (v2): distance home after the turn, and the Turn round card
+      const home = iToHome();
+      if (home != null && ph.type === "work") detText += (detText ? " · " : "") + fmtDist(home) + " to home";
+      const td = $("totDist"), tl = $("totLbl");
+      if (td) td.textContent = fmtDist(home == null ? R.totalDist : home);
+      if (tl) tl.textContent = home == null ? "Distance" : "To home";
+      const tcard = $("turnCard");
+      if (tcard) {
+        const show = !!(R.turn && R.turn.i === R.i);
+        tcard.hidden = !show;
+        if (show) $("turnMeta").textContent = (R.turn.d / 1000).toFixed(2) + " km · " + fmtClock(R.turn.t * 1000);
+      }
     } else {
       const el = tt - R.runStart, sg = R.segs[R.segIdx];
       if (tc) tc.textContent = fmtClock(el);
@@ -3312,6 +3433,7 @@ void main(){
     const lines = ["Sub-41 " + (runKind(r) === "intervals" ? "intervals" : runKind(r) + " run") + ": week " + r.w + ", " + r.title + ", " + fmtDay(r.date)];
     if (runKind(r) === "intervals") {
       lines.push("Total " + fmtClock(r.dur * 1000) + ", " + fmtDist(r.dist));
+      if (r.turn) lines.push("Turned round at " + fmtDist(r.turn.d) + ", " + fmtClock(r.turn.t * 1000));
       repsOf(r).forEach((x) => lines.push("Interval " + x.n + ": " + fmtDist(x.dist) + " in " + fmtClock(x.time * 1000) + " (" + fmtPace(x.pace) + "/km)" + (splitsOf(x).length ? ", splits " + splitsOf(x).map(fmtPace).join(", ") : "")));
     } else {
       lines.push(fmtDist(r.dist) + " in " + fmtClock(r.dur * 1000) + ", average " + fmtPace(r.avg) + "/km");
@@ -3334,6 +3456,7 @@ void main(){
       let t = 0, d = 0; repsOf(r).forEach((x) => { if (x.dist >= 50) { t += x.time; d += x.dist; } });
       const z = ZONES[r.zone];
       stats = "<p>" + fmtClock(r.dur * 1000) + " · " + esc(fmtDist(r.dist)) + (d ? " · average interval pace <strong>" + fmtPace(t / (d / 1000)) + "/km</strong>" + (z ? ", target " + fmtPace(z.target) + "/km" : "") : "") + "</p>";
+      if (r.turn) stats += '<p class="half-line">Turned round at ' + esc(fmtDist(r.turn.d)) + ", " + fmtClock(r.turn.t * 1000) + "</p>";
       detail = '<ul class="reps">';
       repsOf(r).forEach((x) => {
         detail += "<li>" + tap("rep:" + x.n, '<span class="rep-main"><span>Interval ' + x.n + (x.skipped ? " (skipped)" : x.onTime ? " (ended on time)" : "") + "</span><span>" + esc(fmtDist(x.dist)) + " · " + fmtClock(x.time * 1000) + " · " + fmtPace(x.pace) + "/km</span></span>" +
@@ -4298,7 +4421,7 @@ void main(){
 
   window.addEventListener("hashchange", render);
   if (TEST) window.__v2 = { rtEncode: rtEncode, rtDecode: rtDecode, rtSimplify: rtSimplify, rtUnpack: rtUnpack, routeGeo: routeGeo, routeGpx: routeGpx, ui: ui, MV: MV, RT: () => RT, RS: () => RS, openRun: openRun,
-    WK: () => WK, wkWarnings: wkWarnings, weekSchedule: weekSchedule, wkDays: wkDays, defaultRunKind: defaultRunKind, defaultEasyVar: defaultEasyVar, defaultType: defaultType, nextHint: nextHint };
+    WK: () => WK, R: () => R, iTurnPlan: iTurnPlan, intervalPlan: intervalPlan, wkWarnings: wkWarnings, weekSchedule: weekSchedule, wkDays: wkDays, defaultRunKind: defaultRunKind, defaultEasyVar: defaultEasyVar, defaultType: defaultType, nextHint: nextHint };
 
   // Back on the finish screen that was open if the page was reloaded (see OPEN_KEY)
   let reopened = false;
