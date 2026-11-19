@@ -37,6 +37,7 @@
   --chip-ink: #1A1D2E;
   --warn: #9A4A12;
   --good: #1E7A4C;
+  --danger: #B3261E;
   --font-display: "Big Shoulders Display", "Arial Narrow", "Roboto Condensed", Impact, sans-serif;
   --font-ui: "Archivo", system-ui, -apple-system, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
   color-scheme: light;
@@ -57,6 +58,7 @@
     --chip: #283163;
     --warn: #F2A46B;
     --good: #6FD39C;
+    --danger: #FF8A80;
     color-scheme: dark;
   }
 }
@@ -489,6 +491,20 @@ body[data-phase="work"] .swap { color: var(--fg); }
 .run-row .rr-pace { font-weight: 600; white-space: nowrap; font-variant-numeric: tabular-nums; color: var(--fg-soft); }
 .run-row:focus-visible { outline: 3px solid var(--accent); outline-offset: 2px; }
 .history .hint { font-size: 0.9rem; color: var(--fg-soft); margin: -0.2rem 0 0.5rem; }
+/* Activities (v2): the home page lists what you've done, grouped by plan week, newest first */
+.acts { display: flex; flex-direction: column; gap: 1.25rem; }
+.act-week-head { font-weight: 800; font-size: 1.05rem; line-height: 1.3; padding-bottom: 0.4rem; border-bottom: 3px solid var(--fg); font-variant-numeric: tabular-nums; }
+.act-week .run-list li:first-child .run-row { border-top: 0; }
+.act-week .rr-title { overflow-wrap: anywhere; }
+.act-week .rr-pace { font-size: 1.3rem; line-height: 1; }
+.act-empty { color: var(--fg-soft); font-size: 0.92rem; padding: 0.65rem 0; border-bottom: 1px solid var(--line); }
+button.done-tag { appearance: none; border: 0; background: none; font: inherit; font-weight: 700; color: var(--good); padding: 0 0 0 0.5rem; min-height: 2.75rem; cursor: pointer; touch-action: manipulation; }
+button.done-tag:focus-visible { outline: 3px solid var(--accent); outline-offset: 2px; }
+.week-list .w > .wk-padel { display: flex; align-items: center; justify-content: space-between; gap: 0.5rem; }
+.week-list .wk-padel .btn.small { min-height: 2.5rem; }
+.btn.danger { border-color: var(--danger); color: var(--danger); }
+.btn.danger-fill { background: var(--danger); border-color: var(--danger); color: var(--bg); }
+.del-box .confirm { margin-bottom: 0; }
 
 .gallery { display: grid; grid-template-columns: 1fr 1fr; gap: 0.5rem; padding: 1rem 0; overflow-y: auto; }
 .gallery div { border: 1px solid var(--line); border-radius: 0.5rem; padding: 0.25rem; font-size: 0.75rem; }
@@ -1463,13 +1479,16 @@ void main(){
   // Storage (same keys as the separate pages, so saved runs and weights carry over)
   // =====================================================================
   const RKEY = "sub41-intervals-v1", SKEY = "sub41-coach-v1";
+  // Runs kept (v2): was the last 60, now 1000, so the whole 10-week plan (about 45 runs) and more stays in your activities.
+  // A run is about 1 KB, so this stays well inside what Safari lets a page keep.
+  const RUN_KEEP = 1000;
   let RS = { tol: 5, history: [] };
   try {
     const raw = localStorage.getItem(RKEY);
     if (raw) {
       const d = JSON.parse(raw);
       if ([3, 5, 8].includes(d.tol)) RS.tol = d.tol;
-      if (Array.isArray(d.history)) RS.history = d.history.filter((x) => x && x.date).slice(-60);
+      if (Array.isArray(d.history)) RS.history = d.history.filter((x) => x && x.date).slice(-RUN_KEEP);
     }
   } catch (e) {}
   const saveRuns = () => { try { localStorage.setItem(RKEY, JSON.stringify(RS)); } catch (e) {} };
@@ -1489,8 +1508,18 @@ void main(){
   const saveStrength = () => { try { localStorage.setItem(SKEY, JSON.stringify(S)); } catch (e) {} };
   try { if (navigator.storage && navigator.storage.persist) navigator.storage.persist(); } catch (e) {}
   const runKind = (x) => x.kind || "intervals";
+  // Padel you've marked done (v2), under its own key so it never touches the runs, routes, weights or week moves.
+  // Each: { id, date (ISO), w: plan week, d: day 0 = Mon }
+  const PKEY = "sub41-padel-v1";
+  let PD = { v: 1, items: [] };
+  try {
+    const raw = localStorage.getItem(PKEY);
+    if (raw) { const d = JSON.parse(raw); if (d && Array.isArray(d.items)) PD.items = d.items.filter((x) => x && typeof x.id === "string" && typeof x.date === "string" && Number.isInteger(x.w)); }
+  } catch (e) {}
+  const savePadel = () => { try { localStorage.setItem(PKEY, JSON.stringify(PD)); } catch (e) {} };
 
   function isDone(item, w) {
+    if (item.t === "padel") return PD.items.some((x) => x.w === w);
     if (item.t === "strength") return S.sessions.some((x) => x.type === item.s && x.week === w);
     if (item.t === "easy") return RS.history.some((x) => runKind(x) === "easy" && x.w === w && x.v === item.v);
     if (item.t === "intervals") return RS.history.some((x) => runKind(x) === "intervals" && x.w === w);
@@ -1858,7 +1887,8 @@ void main(){
 
   // Saved routes live under their own key, so a full store can't touch the run history.
   // Each is thinned (lines within 2 m dropped) and packed as text: a 10 km run is a few KB.
-  const RTKEY = "sub41-routes-v2", RT_KEEP = 60;
+  // Routes kept: was 60, now 300 (a 10 km route is a few KB), so no route from the 10-week plan drops off
+  const RTKEY = "sub41-routes-v2", RT_KEEP = 300;
   let RT = { v: 1, trim: true, routes: [] };
   try {
     const raw = localStorage.getItem(RTKEY);
@@ -2489,7 +2519,7 @@ void main(){
       if (R.mid) rec.mid = { at: R.mid.at, t: Math.round(R.mid.time) }; // halfway: distance in m, time in s without pauses
       if (dist < 100) rec = null;
     }
-    if (rec) { RS.history.push(rec); RS.history = RS.history.slice(-60); saveRuns(); }
+    if (rec) { RS.history.push(rec); RS.history = RS.history.slice(-RUN_KEEP); saveRuns(); }
     let route = null;
     try { route = rtFinish(rec, endT); } catch (e) { route = null; }
     ui.lastRun = rec; ui.lastRoute = route; ui.hl = null; ui.view = rec ? "runDone" : "home"; ui.confirmEnd = false; ui.copyText = null;
@@ -2803,7 +2833,7 @@ void main(){
     if (rec.sets.length) { S.sessions.push(rec); if (S.sessions.length > 300) S.sessions = S.sessions.slice(-300); }
     S.current = null; C = null; saveStrength();
     clearInterval(sTicker); sTicker = null; releaseWake();
-    ui.lastLift = rec.sets.length ? rec : null; ui.view = rec.sets.length ? "liftDone" : "home"; ui.confirmEnd = false; ui.copyText = null;
+    ui.lastLift = rec.sets.length ? rec : null; ui.liftFrom = null; ui.view = rec.sets.length ? "liftDone" : "home"; ui.confirmEnd = false; ui.copyText = null;
     if (complete) { say(((prefix || "") + " Session complete. Nice work.").trim()); beep(660, 0.15, 0.25); setTimeout(() => beep(990, 0.4, 0.3), 180); }
     render();
   }
@@ -3048,7 +3078,9 @@ void main(){
   const app = $("app");
   const ui = { view: "home", rKind: null, rWeek: null, rVar: null, sType: null, sWeek: null, preview: null, confirmEnd: false, locked: false,
                lastRun: null, lastLift: null, copyText: null, lastRoute: null, hl: null, doneFrom: null, gpx: null, gpxMsg: "",
-               wkEdit: false, wkUndo: [] }; // Edit week is on; earlier arrangements for Undo (this visit only)
+               wkEdit: false, wkUndo: [], // Edit week is on; earlier arrangements for Undo (this visit only)
+               liftFrom: null, lastPadel: null, homeTop: 0, delAsk: null }; // strength opened from Activities; padel open; where Activities was scrolled to; which activity Delete is asking about
+  // doneFrom (runs): "finish" just finished, "runs" from Recent runs on the Run screen, "acts" from Activities on home
   // Which finish screen is open, kept for this browser tab only (sessionStorage, not the saved runs), so if iPhone
   // reloads the page while a run's finish screen is open, it comes back. Ignored after 30 minutes.
   const OPEN_KEY = "sub41-v2-open-run";
@@ -3067,7 +3099,7 @@ void main(){
     if (route && (!Array.isArray(route.pts) || route.pts.length < 2)) route = null;
     if (MV.id !== id) mapReset();
     if (!R) stopGps();
-    ui.lastRun = r; ui.lastRoute = route; ui.hl = null; ui.copyText = null; ui.gpx = null; ui.gpxMsg = "";
+    ui.lastRun = r; ui.lastRoute = route; ui.hl = null; ui.copyText = null; ui.gpx = null; ui.gpxMsg = ""; ui.delAsk = null;
     ui.doneFrom = from || "runs"; ui.view = "runDone"; ui.confirmEnd = false;
     render();
     const v = app.querySelector(".view"); if (v) v.scrollTop = 0;
@@ -3079,21 +3111,25 @@ void main(){
     const t = $("rHistTitle"); if (t && t.scrollIntoView) t.scrollIntoView({ block: "start" });
   }
   function render() {
-    if (ui.view !== "home") wkLeaveHome();
+    if (ui.view !== "workouts") wkLeaveHome(); // the week list (and Edit week) lives on the Workouts screen
     if (location.hash === "#figures") return renderGallery();
     document.body.classList.remove("is-paused");
     rememberOpen();
     switch (ui.view) {
+      case "workouts": return renderWorkouts();
       case "runSetup": return renderRunSetup();
       case "run": return R ? renderRun() : (ui.view = "home", renderHome());
       case "runDone": return ui.lastRun ? renderRunDone() : (ui.view = "home", renderHome());
       case "liftSetup": return renderLiftSetup();
       case "lift": return C ? renderLift() : (ui.view = "home", renderHome());
       case "liftDone": return ui.lastLift ? renderLiftDone() : (ui.view = "home", renderHome());
+      case "padelDone": return ui.lastPadel ? renderPadelDone() : (ui.view = "home", renderHome());
       default: ui.view = "home"; return renderHome();
     }
   }
-  const backLink = () => '<button type="button" class="link-btn back" data-act="home">‹ Home</button>';
+  // The Run and Strength setup screens go back to Workouts; Workouts goes back to home
+  const backLink = () => '<button type="button" class="link-btn back" data-act="workouts">‹ Workouts</button>';
+  const homeLink = () => '<button type="button" class="link-btn back" data-act="home">‹ Home</button>';
 
   // ----- Home -----
   function itemSub(it, w) {
@@ -3104,15 +3140,88 @@ void main(){
     if (it.t === "padel") return "Counts as a hard session";
     return "";
   }
+  const homeLabel = (pre, w) => '<p class="label">Sub-41 v2 · ' + (pre ? "Week 1 starts Mon 16 Nov" : shortWeek(planWeek()) + (isLight(w) ? " · lighter" : w === 10 ? " · race week" : "")) + "</p>";
+
+  // ----- Activities (v2): your runs, strength sessions and padel, grouped by plan week, newest first -----
+  // An activity goes under the plan week it was logged against (the week picked on the setup screen), the same week its tick shows in.
+  const liftKey = (x) => x.id || x.date || "";
+  const okWeek = (w, date) => { if (Number.isInteger(w) && w >= 1) return w; const p = planWeek(new Date(date)); return isFinite(p) && p >= 1 ? p : 1; };
+  const dayText = (d) => (d ? fmtDay(d) : "");
+  // A run's average pace: its own average, or for intervals the average over the intervals (as in Recent runs)
+  function runAvg(r) {
+    if (runKind(r) !== "intervals") return r.avg;
+    let t = 0, d = 0; (r.reps || []).forEach((x) => { if (x.dist >= 50) { t += x.time; d += x.dist; } });
+    return d ? t / (d / 1000) : null;
+  }
+  function allActs() {
+    const out = [];
+    RS.history.forEach((r) => { const avg = runAvg(r); out.push({ k: "run", id: r.date, date: r.date, w: okWeek(r.w, r.date), dist: r.dist || 0, title: r.title || "Run",
+      sub: [dayText(r.date), "Run", r.dist != null ? fmtDist(r.dist) : "", r.dur != null ? fmtClock(r.dur * 1000) : "", avg ? fmtPace(avg) + "/km" : ""] }); });
+    S.sessions.forEach((x) => out.push({ k: "lift", id: liftKey(x), date: x.date || "", w: okWeek(x.week, x.date), title: sessName(x),
+      sub: [dayText(x.date), "Strength", x.durationSec != null ? Math.max(1, Math.round(x.durationSec / 60)) + " min" : ""] }));
+    PD.items.forEach((p) => out.push({ k: "padel", id: p.id, date: p.date, w: p.w, title: "Padel", sub: [dayText(p.date), "Padel"] }));
+    return out;
+  }
+  // Weeks with something logged, plus this week (always shown), highest week first; newest activity first in each
+  function actWeeks() {
+    const by = {};
+    allActs().forEach((a) => { (by[a.w] = by[a.w] || []).push(a); });
+    if (!beforePlan()) { const cw = homeWeek(); by[cw] = by[cw] || []; }
+    return Object.keys(by).map(Number).sort((a, b) => b - a)
+      .map((w) => ({ w: w, acts: by[w].sort((a, b) => (a.date < b.date ? 1 : a.date > b.date ? -1 : 0)) }));
+  }
+  // "Week 2 · 5 of 7 done · 22 km": the count is of the sessions planned for that week, the same as the ticks
+  function actWeekHead(w, acts) {
+    const parts = [shortWeek(w)];
+    if (w <= 10) { const its = weekItems(w), ids = Object.keys(its); parts.push(ids.filter((id) => isDone(its[id], w)).length + " of " + ids.length + " done"); }
+    else parts.push(acts.length + (acts.length === 1 ? " activity" : " activities"));
+    const m = acts.reduce((s, a) => s + (a.k === "run" ? a.dist : 0), 0);
+    if (m > 0) parts.push(fmtKm(m));
+    return parts.join(" · ");
+  }
+  function actsHtml() {
+    const weeks = actWeeks();
+    let h = '<section class="acts" aria-labelledby="actsTitle"><h2 class="section-title" id="actsTitle">Activities</h2>';
+    if (!weeks.length) return h + '<p class="soft">Your runs, strength sessions and padel show up here once you\'ve done them. Tap one to open it.</p></section>';
+    weeks.forEach((g) => {
+      h += '<div class="act-week"><h3 class="act-week-head">' + esc(actWeekHead(g.w, g.acts)) + "</h3>";
+      if (!g.acts.length) { h += '<p class="act-empty">Nothing logged yet this week.</p></div>'; return; }
+      h += '<ul class="run-list">';
+      g.acts.forEach((a) => {
+        h += '<li><button type="button" class="run-row" data-act="open-act" data-k="' + a.k + '" data-id="' + esc(a.id) + '"><span class="rr-main"><span class="rr-title">' + esc(a.title) + "</span>" +
+          '<span class="rr-sub">' + esc(a.sub.filter(Boolean).join(" · ")) + '</span></span><span class="rr-pace" aria-hidden="true">›</span></button></li>';
+      });
+      h += "</ul></div>";
+    });
+    return h + "</section>";
+  }
+  // The activity that ticks off a planned session in week w (the latest, if there's more than one)
+  function actFor(it, w) {
+    const last = (a) => (a.length ? a[a.length - 1] : null);
+    if (it.t === "strength") { const x = last(S.sessions.filter((x) => x.type === it.s && x.week === w)); return x ? { k: "lift", id: liftKey(x) } : null; }
+    if (it.t === "padel") { const x = last(PD.items.filter((x) => x.w === w)); return x ? { k: "padel", id: x.id } : null; }
+    const ok = it.t === "easy" ? (x) => runKind(x) === "easy" && x.v === it.v : it.t === "intervals" ? (x) => runKind(x) === "intervals" :
+      it.t === "long" ? (x) => runKind(x) === "long" || runKind(x) === "race" : null;
+    if (!ok) return null;
+    const r = last(RS.history.filter((x) => x.w === w && ok(x)));
+    return r ? { k: "run", id: r.date } : null;
+  }
+  // Saves padel as done for day d of week w: now if it's today, otherwise midday on that day
+  function padelDone(w, d) {
+    if (!(w >= 1 && w <= 9) || !(d >= 0 && d <= 6) || PD.items.some((x) => x.w === w)) return;
+    const today = !beforePlan() && w === planWeek() && d === dayIndex(), when = today ? new Date() : new Date(dateOf(w, d).getTime() + 12 * 3600e3);
+    PD.items.push({ id: "p" + Date.now().toString(36), date: when.toISOString(), w: w, d: d });
+    savePadel();
+    render();
+    wkToast("Padel saved for " + fmtDay(when) + ".", false);
+  }
+
   function renderHome() {
     document.body.setAttribute("data-phase", "idle");
-    // Re-drawing home over home (after a move, Undo or Reset) keeps your place on the page
-    const prevView = app.querySelector('.view.scroll[aria-labelledby="homeTitle"]'), keepTop = prevView ? prevView.scrollTop : 0;
-    const pre = beforePlan(), w = Math.min(planWeek(), 10), di = pre ? 0 : dayIndex(), sched = weekSchedule(w);
-    const todayItems = pre ? [] : sched[di], edit = !!ui.wkEdit, warns = wkWarnings(w);
+    const pre = beforePlan(), w = homeWeek(), di = pre ? 0 : dayIndex(), sched = weekSchedule(w);
+    const todayItems = pre ? [] : sched[di];
     let h = '<section class="view scroll" aria-labelledby="homeTitle">';
-    h += '<header><p class="label">Sub-41 v2 · ' + (pre ? "Week 1 starts Mon 16 Nov" : shortWeek(planWeek()) + (isLight(w) ? " · lighter" : w === 10 ? " · race week" : "")) + "</p>" +
-      '<h1 class="title" id="homeTitle">' + (pre ? "Ready" : DAYS[di]) + "</h1></header>";
+    h += "<header>" + homeLabel(pre, w) + '<h1 class="title" id="homeTitle">' + (pre ? "Ready" : DAYS[di]) + "</h1></header>";
     if (C) {
       h += '<div class="notice"><p class="notice-title">Unfinished: ' + esc(SESSIONS[C.type].name) + '</p><p class="soft">' + C.sets.length + " of " + buildSets(C.type, C.week).length +
         ' sets done.</p><div class="notice-actions"><button type="button" class="btn primary" data-act="lift-resume">Resume</button>' +
@@ -3121,14 +3230,31 @@ void main(){
     h += '<div class="today">';
     if (pre) h += '<div class="today-item"><div><p class="what">Your plan starts on Monday</p><p class="sub">Try the tools now: check GPS and voice, and look at the strength exercises.</p></div></div>';
     todayItems.forEach((it) => {
-      const done = isDone(it, w);
       let btn = "";
-      if (it.t === "strength") btn = '<button type="button" class="btn small primary" data-act="go-lift" data-s="' + it.s + '">Start</button>';
-      else if (it.t !== "note" && it.t !== "padel") btn = '<button type="button" class="btn small primary" data-act="go-run" data-k="' + it.t + '"' + (it.v ? ' data-v="' + it.v + '"' : "") + ">Start</button>";
-      h += '<div class="today-item"><div><p class="what">' + esc(it.label) + '</p><p class="sub">' + esc(itemSub(it, w) || (it.label === "Padel" ? "Counts as a hard session" : "Recovery")) + "</p></div>" +
-        (done ? '<span class="done-tag">Done ✓</span>' : btn) + "</div>";
+      if (isDone(it, w)) {
+        const a = actFor(it, w);
+        btn = a ? '<button type="button" class="done-tag" data-act="open-act" data-k="' + a.k + '" data-id="' + esc(a.id) + '" aria-label="Done. Open ' + esc(it.label) + '">Done ✓ ›</button>' : '<span class="done-tag">Done ✓</span>';
+      } else if (it.t === "strength") btn = '<button type="button" class="btn small primary" data-act="go-lift" data-s="' + it.s + '">Start</button>';
+      else if (it.t === "padel") btn = '<button type="button" class="btn small primary" data-act="pad-done" data-w="' + w + '" data-d="' + di + '">Mark done</button>';
+      else if (it.t !== "note") btn = '<button type="button" class="btn small primary" data-act="go-run" data-k="' + it.t + '"' + (it.v ? ' data-v="' + it.v + '"' : "") + ">Start</button>";
+      h += '<div class="today-item"><div><p class="what">' + esc(it.label) + '</p><p class="sub">' + esc(itemSub(it, w) || (it.label === "Padel" ? "Counts as a hard session" : "Recovery")) + "</p></div>" + btn + "</div>";
     });
     h += "</div>";
+    h += '<button type="button" class="btn wide" data-act="workouts">Select workout</button>';
+    h += actsHtml();
+    h += "</section>";
+    app.innerHTML = h;
+  }
+
+  // ----- Workouts (v2): Run and Strength, and this week's plan with Edit week -----
+  function renderWorkouts() {
+    document.body.setAttribute("data-phase", "idle");
+    // Re-drawing Workouts over itself (after a move, Undo, Reset or Mark done) keeps your place on the page
+    const prevView = app.querySelector('.view.scroll[aria-labelledby="wkoTitle"]'), keepTop = prevView ? prevView.scrollTop : 0;
+    const pre = beforePlan(), w = homeWeek(), di = pre ? 0 : dayIndex(), sched = weekSchedule(w);
+    const edit = !!ui.wkEdit, warns = wkWarnings(w);
+    let h = '<section class="view scroll" aria-labelledby="wkoTitle">' + homeLink();
+    h += "<header>" + homeLabel(pre, w) + '<h1 class="title" id="wkoTitle">Workouts</h1></header>';
     h += '<div class="choices"><button type="button" class="choice" data-act="go-run"><span class="big-word">Run</span><span class="sub">Easy, intervals, long run</span></button>' +
       '<button type="button" class="choice" data-act="go-lift"><span class="big-word">Strength</span><span class="sub">Strength 1 or 2</span></button></div>';
     h += '<section aria-labelledby="weekTitle" id="weekSec"><div class="week-head"><h2 class="section-title" id="weekTitle">' + (pre ? "Week 1" : "This week") + "</h2>" +
@@ -3139,11 +3265,14 @@ void main(){
       const today = !pre && d === di;
       h += '<li class="' + (today ? "is-today" : "") + '" data-day="' + d + '"><span class="d">' + DAYS3[d] + '</span><span class="w">';
       items.forEach((it) => {
-        const tick = isDone(it, w) ? ' <span class="tick">✓</span>' : "";
+        const done = isDone(it, w), tick = done ? ' <span class="tick">✓</span>' : "";
         if (edit && it.id && !it.fixed) {
           h += '<span class="wk-item" data-id="' + it.id + '"><button type="button" class="wk-name" data-act="wk-pick" data-id="' + it.id + '">' + esc(it.label) + tick + "</button>" +
             '<span class="wk-handle" data-act="wk-pick" data-id="' + it.id + '" aria-hidden="true">≡</span></span>';
         } else if (edit) h += '<span class="wk-still' + (it.t === "note" ? " muted" : "") + '">' + esc(it.label) + tick + (it.fixed ? '<span class="wk-fixed">· stays put</span>' : "") + "</span>";
+        // Padel: Mark done on today or an earlier day this week, not while you're editing the week
+        else if (it.t === "padel" && !done && !pre && d <= di && planWeek() <= 10)
+          h += '<span class="wk-padel"><span>' + esc(it.label) + '</span><button type="button" class="btn small" data-act="pad-done" data-w="' + w + '" data-d="' + d + '">Mark done</button></span>';
         else h += '<span class="' + (it.t === "note" ? "muted" : "") + '">' + esc(it.label) + tick + "</span>";
       });
       warns[d].forEach((m) => { h += '<span class="wk-warn">⚠︎ ' + esc(m) + "</span>"; });
@@ -3444,13 +3573,14 @@ void main(){
     return lines.join("\n");
   }
   function renderRunDone() {
-    const r = ui.lastRun, route = ui.lastRoute && ui.lastRoute.id === r.date ? ui.lastRoute : null, past = ui.doneFrom === "runs";
+    const r = ui.lastRun, route = ui.lastRoute && ui.lastRoute.id === r.date ? ui.lastRoute : null, past = ui.doneFrom === "runs", acts = ui.doneFrom === "acts";
     document.body.setAttribute("data-phase", "done");
     // with a route, each rep or km is a button that shows that stretch on the map
     const tap = (key, inner, cls) => route ? '<button type="button" class="hl-btn' + (cls ? " " + cls : "") + '" data-act="hl" data-hl="' + key + '" aria-pressed="' + (ui.hl === key) + '">' + inner + "</button>" : (cls ? "<div>" + inner + "</div>" : inner);
-    let h = '<section class="view done" aria-labelledby="doneTitle">' + (past ? '<button type="button" class="link-btn back" data-act="back-runs">‹ Runs</button>' : "") +
+    let h = '<section class="view done" aria-labelledby="doneTitle">' + (past ? '<button type="button" class="link-btn back" data-act="back-runs">‹ Runs</button>' :
+      acts ? '<button type="button" class="link-btn back" data-act="back-acts">‹ Activities</button>' : "") +
       '<h1 class="done-title" id="doneTitle">' + (r.complete ? "Done." : "Saved.") + "</h1>";
-    h += '<p class="done-meta">' + (past ? esc(fmtDay(r.date)) + " · " : "") + "Week " + r.w + " · " + esc(r.title) + "</p>";
+    h += '<p class="done-meta">' + (past || acts ? esc(fmtDay(r.date)) + " · " : "") + "Week " + r.w + " · " + esc(r.title) + "</p>";
     let stats = "", detail = "";
     if (runKind(r) === "intervals") {
       let t = 0, d = 0; repsOf(r).forEach((x) => { if (x.dist >= 50) { t += x.time; d += x.dist; } });
@@ -3482,7 +3612,9 @@ void main(){
     if (route) h += '<button type="button" class="btn" data-act="gpx">Save route as GPX</button><p class="gpx-msg" id="gpxMsg" role="status">' + esc(ui.gpxMsg || "") + "</p>" +
       '<div class="gpx-out" id="gpxOut">' + gpxOutHtml() + "</div>" +
       '<label class="check"><input type="checkbox" id="gpxTrim"' + (RT.trim ? " checked" : "") + "><span>Leave out the first and last 200 m of the GPX file, so it doesn't show where you started and finished</span></label>";
-    h += '</div><div class="sticky-bar">' + (past ? '<button type="button" class="btn primary wide" data-act="back-runs">Back to runs</button><button type="button" class="link-btn" data-act="home" style="width:100%">Back to home</button>'
+    h += "</div>" + delBoxHtml();
+    h += '<div class="sticky-bar">' + (past ? '<button type="button" class="btn primary wide" data-act="back-runs">Back to runs</button><button type="button" class="link-btn" data-act="home" style="width:100%">Back to home</button>'
+      : acts ? '<button type="button" class="btn primary wide" data-act="back-acts">‹ Activities</button>'
       : '<button type="button" class="btn primary wide" data-act="home">Back to home</button>') + "</div></section>";
     app.innerHTML = h;
     if (route) mountRouteMap(route);
@@ -4089,20 +4221,117 @@ void main(){
     return lead + " Any lift where you hit the top of the range on every set goes up 2 kg.";
   }
   function renderLiftDone() {
-    // Offers the easy run that's on the same day as this strength session in your week, if it isn't done yet
-    const r = ui.lastLift, ew = Math.min(r.week, 10), sd = sessDay(ew, r.type);
-    const pair = sd == null ? null : weekSchedule(ew)[sd].find((x) => x.t === "easy" && !isDone(x, ew));
+    // Offers the easy run that's on the same day as this strength session in your week, if it isn't done yet.
+    // Opened from Activities instead, it has "‹ Activities" in place of that.
+    const r = ui.lastLift, ew = Math.min(Math.max(1, r.week || 1), 10), sd = sessDay(ew, r.type), acts = ui.liftFrom === "acts";
+    const pair = acts || sd == null ? null : weekSchedule(ew)[sd].find((x) => x.t === "easy" && !isDone(x, ew));
     const offerRun = !!pair, v = pair ? pair.v : "mon";
     document.body.setAttribute("data-phase", "done");
-    let h = '<section class="view done" aria-labelledby="doneTitle"><h1 class="done-title" id="doneTitle">' + (r.complete ? "Logged." : "Saved.") + "</h1>" +
-      '<p class="done-meta">' + esc(sessName(r)) + " · " + esc(shortWeek(r.week)) + " · " + Math.max(1, Math.round(r.durationSec / 60)) + ' min</p><ul class="summary">';
+    let h = '<section class="view done" aria-labelledby="doneTitle">' + (acts ? '<button type="button" class="link-btn back" data-act="back-acts">‹ Activities</button>' : "") +
+      '<h1 class="done-title" id="doneTitle">' + (r.complete ? "Logged." : "Saved.") + "</h1>" +
+      '<p class="done-meta">' + (acts && r.date ? esc(fmtDay(r.date)) + " · " : "") + esc(sessName(r)) + " · " + esc(shortWeek(r.week)) + " · " + Math.max(1, Math.round(r.durationSec / 60)) + ' min</p><ul class="summary">';
     perExercise(r).forEach((x) => { h += "<li><span>" + esc(x.name) + "</span><span>" + esc(x.val) + (x.reps ? '<br><span class="soft">' + esc(x.reps) + "</span>" : "") + "</span></li>"; });
     h += '</ul><p class="done-next">' + esc(nextHint(r)) + "</p>";
     h += '<div class="done-actions"><button type="button" class="btn" data-act="copy-lift">Copy summary</button>';
     if (ui.copyText) h += '<textarea class="copy-box" id="copyBox" readonly>' + esc(ui.copyText) + "</textarea>";
-    h += "</div><div class=\"sticky-bar\">" + (offerRun ? '<button type="button" class="btn primary wide" data-act="go-run" data-k="easy" data-v="' + v + '" data-w="' + ew + '">Start your ' + esc(easyPlan(ew, v).title) + " run</button>" +
+    h += "</div>" + delBoxHtml();
+    h += "<div class=\"sticky-bar\">" + (acts ? '<button type="button" class="btn primary wide" data-act="back-acts">‹ Activities</button>' :
+      offerRun ? '<button type="button" class="btn primary wide" data-act="go-run" data-k="easy" data-v="' + v + '" data-w="' + ew + '">Start your ' + esc(easyPlan(ew, v).title) + " run</button>" +
       '<button type="button" class="link-btn" data-act="home" style="width:100%">Back to home</button>' : '<button type="button" class="btn primary wide" data-act="home">Back to home</button>') + "</div></section>";
     app.innerHTML = h;
+  }
+  // Padel you marked done, opened from Activities
+  function renderPadelDone() {
+    const p = ui.lastPadel;
+    document.body.setAttribute("data-phase", "done");
+    let h = '<section class="view done" aria-labelledby="doneTitle"><button type="button" class="link-btn back" data-act="back-acts">‹ Activities</button>' +
+      '<h1 class="done-title" id="doneTitle">Padel.</h1><p class="done-meta">' + esc(dayText(p.date)) + " · " + esc(shortWeek(p.w)) + "</p>" +
+      '<p class="done-next">Marked done. It counts as a hard session in your week.</p>';
+    h += delBoxHtml();
+    h += '<div class="sticky-bar"><button type="button" class="btn primary wide" data-act="back-acts">‹ Activities</button></div></section>';
+    app.innerHTML = h;
+  }
+
+  // ----- Opening and deleting activities (v2) -----
+  // Where Activities was scrolled to, so "‹ Activities" brings you back to the same place
+  function rememberHome() { if (ui.view === "home") { const v = app.querySelector(".view.scroll"); ui.homeTop = v ? v.scrollTop : 0; } }
+  function openLift(id) {
+    const r = S.sessions.find((x) => liftKey(x) === id);
+    if (!r) return false;
+    ui.lastLift = r; ui.liftFrom = "acts"; ui.copyText = null; ui.delAsk = null; ui.view = "liftDone";
+    render();
+    const v = app.querySelector(".view"); if (v) v.scrollTop = 0;
+    return true;
+  }
+  function openPadel(id) {
+    const p = PD.items.find((x) => x.id === id);
+    if (!p) return false;
+    ui.lastPadel = p; ui.delAsk = null; ui.view = "padelDone";
+    render();
+    return true;
+  }
+  function openAct(k, id) {
+    rememberHome();
+    if (k === "run") openRun(id, "acts");
+    else if (k === "lift") openLift(id);
+    else if (k === "padel") openPadel(id);
+  }
+  // Back to home: to where you were in the list if you came from it, otherwise the top (with your newest activity)
+  function backToActs() {
+    const fromList = (ui.view === "runDone" && ui.doneFrom === "acts") || (ui.view === "liftDone" && ui.liftFrom === "acts") || ui.view === "padelDone";
+    const top = fromList ? ui.homeTop : 0;
+    if (!R) stopGps();
+    ui.view = "home"; ui.lastRun = null; ui.lastLift = null; ui.lastPadel = null; ui.liftFrom = null; ui.copyText = null; ui.lastRoute = null; ui.hl = null;
+    ui.gpx = null; ui.gpxMsg = ""; ui.doneFrom = null; ui.delAsk = null;
+    mapReset(); render();
+    const v = app.querySelector(".view.scroll"); if (v) v.scrollTop = top;
+  }
+  // Which activity is open, for Delete
+  function delKey() {
+    if (ui.view === "runDone" && ui.lastRun) return "run:" + ui.lastRun.date;
+    if (ui.view === "liftDone" && ui.lastLift) return "lift:" + liftKey(ui.lastLift);
+    if (ui.view === "padelDone" && ui.lastPadel) return "padel:" + ui.lastPadel.id;
+    return null;
+  }
+  // "Delete activity", or once tapped, the question with Delete and Keep it (on the page, not a pop-up)
+  function delInner() {
+    const key = delKey(), kind = key ? key.slice(0, key.indexOf(":")) : "";
+    if (!key || ui.delAsk !== key) return '<button type="button" class="btn danger" data-act="del-ask" style="width:100%">Delete activity</button>';
+    const hasRoute = kind === "run" && RT.routes.some((x) => x.id === ui.lastRun.date);
+    const q = kind === "run" ? "Delete this run?" : kind === "lift" ? "Delete this strength session?" : "Delete this padel session?";
+    const note = kind === "run" ? (hasRoute ? "Its saved route and map go too. " : "") + "You can't undo this." :
+      kind === "lift" ? "This changes the app's next weight suggestions, as they're worked out from your logged sessions. You can't undo this." :
+      "It stops counting towards the week. You can't undo this.";
+    return '<div class="confirm" role="group" aria-labelledby="delQ"><p class="q" id="delQ">' + q + '</p><p class="soft">' + note + "</p>" +
+      '<button type="button" class="btn danger-fill" data-act="del-go">Delete</button><button type="button" class="link-btn" data-act="del-cancel">Keep it</button></div>';
+  }
+  const delBoxHtml = () => '<div class="del-box" id="delBox">' + delInner() + "</div>";
+  // Only the Delete area is re-drawn, so a run's map doesn't reload
+  function delPaint() {
+    const b = $("delBox"); if (!b) return;
+    b.innerHTML = delInner();
+    if (ui.delAsk && b.scrollIntoView) b.scrollIntoView({ block: "center", behavior: reduceMotion ? "auto" : "smooth" });
+  }
+  function deleteOpen() {
+    const key = delKey();
+    if (!key || ui.delAsk !== key) return;
+    let msg;
+    if (ui.view === "runDone") {
+      const r = ui.lastRun;
+      RS.history = RS.history.filter((x) => x !== r); saveRuns();
+      // its saved route goes too (the route is saved under the run's start time)
+      if (!RS.history.some((x) => x.date === r.date)) { RT.routes = RT.routes.filter((x) => x.id !== r.date); rtStore(); }
+      msg = "Run deleted.";
+    } else if (ui.view === "liftDone") {
+      const x = ui.lastLift; S.sessions = S.sessions.filter((y) => y !== x); saveStrength();
+      msg = "Strength session deleted.";
+    } else {
+      const p = ui.lastPadel; PD.items = PD.items.filter((y) => y !== p); savePadel();
+      msg = "Padel deleted.";
+    }
+    ui.delAsk = null;
+    if (ui.view === "runDone" && ui.doneFrom === "runs") backToRuns(); else backToActs();
+    wkToast(msg, false);
   }
   function liftSummaryText(r) {
     const lines = [sessName(r) + ", " + shortWeek(r.week).toLowerCase() + ", " + fmtDay(r.date)];
@@ -4137,13 +4366,21 @@ void main(){
     unlockAudio();
     const act = b.getAttribute("data-act");
     switch (act) {
-      case "home": if (!R) stopGps(); ui.view = "home"; ui.lastRun = null; ui.lastLift = null; ui.copyText = null; ui.lastRoute = null; ui.hl = null; ui.gpx = null; ui.gpxMsg = ""; ui.doneFrom = null; mapReset(); render(); app.scrollTop = 0; break;
+      case "home": if (!R) stopGps(); ui.view = "home"; ui.lastRun = null; ui.lastLift = null; ui.lastPadel = null; ui.liftFrom = null; ui.copyText = null; ui.lastRoute = null; ui.hl = null; ui.gpx = null; ui.gpxMsg = ""; ui.doneFrom = null; ui.delAsk = null; mapReset(); render(); app.scrollTop = 0; break;
+      case "workouts": if (!R) stopGps(); ui.view = "workouts"; ui.lastRun = null; ui.lastLift = null; ui.lastPadel = null; ui.liftFrom = null; ui.copyText = null; ui.lastRoute = null; ui.hl = null; ui.gpx = null; ui.gpxMsg = ""; ui.doneFrom = null; ui.delAsk = null; mapReset(); render(); break;
       case "open-run": openRun(b.getAttribute("data-id"), "runs"); break;
       case "back-runs": backToRuns(); break;
+      // activities (v2)
+      case "open-act": openAct(b.getAttribute("data-k"), b.getAttribute("data-id")); break;
+      case "back-acts": backToActs(); break;
+      case "pad-done": padelDone(+b.getAttribute("data-w"), +b.getAttribute("data-d")); break;
+      case "del-ask": ui.delAsk = delKey(); delPaint(); break;
+      case "del-cancel": ui.delAsk = null; delPaint(); break;
+      case "del-go": deleteOpen(); break;
       case "gpx-copy": copyGpx(b); break;
       case "go-run": {
         ui.view = "runSetup"; ui.rKind = b.getAttribute("data-k") || null; ui.rVar = b.getAttribute("data-v") || null;
-        ui.rWeek = b.getAttribute("data-w") ? +b.getAttribute("data-w") : null; ui.lastLift = null; ui.copyText = null;
+        ui.rWeek = b.getAttribute("data-w") ? +b.getAttribute("data-w") : null; ui.lastLift = null; ui.liftFrom = null; ui.copyText = null;
         startGps(); render(); break;
       }
       case "go-lift": ui.view = "liftSetup"; ui.sType = b.getAttribute("data-s") || null; ui.preview = null; render(); break;
@@ -4327,7 +4564,7 @@ void main(){
   function wkUndoLast() {
     if (!ui.wkUndo.length) return;
     WK = ui.wkUndo.pop(); wkSave(); wkToast("Undone.", false);
-    if (ui.view === "home") render();
+    if (ui.view === "workouts") render();
   }
   function wkLeaveHome() {
     ui.wkEdit = false;
@@ -4420,14 +4657,14 @@ void main(){
   app.addEventListener("contextmenu", (e) => { if (e.target.closest(".week-list.editing")) e.preventDefault(); });
 
   window.addEventListener("hashchange", render);
-  if (TEST) window.__v2 = { rtEncode: rtEncode, rtDecode: rtDecode, rtSimplify: rtSimplify, rtUnpack: rtUnpack, routeGeo: routeGeo, routeGpx: routeGpx, ui: ui, MV: MV, RT: () => RT, RS: () => RS, openRun: openRun,
+  if (TEST) window.__v2 = { rtEncode: rtEncode, rtDecode: rtDecode, rtSimplify: rtSimplify, rtUnpack: rtUnpack, routeGeo: routeGeo, routeGpx: routeGpx, ui: ui, MV: MV, RT: () => RT, RS: () => RS, S: () => S, PD: () => PD, openRun: openRun,
     WK: () => WK, R: () => R, iTurnPlan: iTurnPlan, intervalPlan: intervalPlan, wkWarnings: wkWarnings, weekSchedule: weekSchedule, wkDays: wkDays, defaultRunKind: defaultRunKind, defaultEasyVar: defaultEasyVar, defaultType: defaultType, nextHint: nextHint };
 
   // Back on the finish screen that was open if the page was reloaded (see OPEN_KEY)
   let reopened = false;
   try {
     const o = JSON.parse(sessionStorage.getItem(OPEN_KEY) || "null");
-    if (o && o.id && Date.now() - o.at < 30 * 60000 && !C && location.hash !== "#figures") reopened = openRun(o.id, o.from === "runs" ? "runs" : "finish");
+    if (o && o.id && Date.now() - o.at < 30 * 60000 && !C && location.hash !== "#figures") reopened = openRun(o.id, o.from === "runs" || o.from === "acts" ? o.from : "finish");
   } catch (e) {}
   if (!reopened) render();
   requestAnimationFrame(animate);
