@@ -505,6 +505,19 @@ button.done-tag:focus-visible { outline: 3px solid var(--accent); outline-offset
 .btn.danger { border-color: var(--danger); color: var(--danger); }
 .btn.danger-fill { background: var(--danger); border-color: var(--danger); color: var(--bg); }
 .del-box .confirm { margin-bottom: 0; }
+/* Your data (v2): back up everything the app has saved to one file, and restore it, at the bottom of home */
+.data { display: flex; flex-direction: column; gap: 0.6rem; padding-bottom: 1.5rem; }
+.data-box { position: relative; display: flex; flex-direction: column; gap: 0.6rem; }
+.data-box .btn { width: 100%; }
+label.btn { display: flex; align-items: center; justify-content: center; text-align: center; }
+label.btn:active { transform: translateY(1px); }
+.data-box input[type="file"]:focus-visible + label { outline: 3px solid var(--accent); outline-offset: 2px; }
+.data-msg { font-weight: 600; font-size: 0.95rem; }
+.data-msg.warn { color: var(--warn); }
+.data-msg:empty { display: none; }
+.data-box .confirm { margin-bottom: 0; }
+.data-box .confirm .btn { width: 100%; }
+.data-count { font-weight: 700; }
 
 .gallery { display: grid; grid-template-columns: 1fr 1fr; gap: 0.5rem; padding: 1rem 0; overflow-y: auto; }
 .gallery div { border: 1px solid var(--line); border-radius: 0.5rem; padding: 0.25rem; font-size: 0.75rem; }
@@ -3079,7 +3092,8 @@ void main(){
   const ui = { view: "home", rKind: null, rWeek: null, rVar: null, sType: null, sWeek: null, preview: null, confirmEnd: false, locked: false,
                lastRun: null, lastLift: null, copyText: null, lastRoute: null, hl: null, doneFrom: null, gpx: null, gpxMsg: "",
                wkEdit: false, wkUndo: [], // Edit week is on; earlier arrangements for Undo (this visit only)
-               liftFrom: null, lastPadel: null, homeTop: 0, delAsk: null }; // strength opened from Activities; padel open; where Activities was scrolled to; which activity Delete is asking about
+               liftFrom: null, lastPadel: null, homeTop: 0, delAsk: null, // strength opened from Activities; padel open; where Activities was scrolled to; which activity Delete is asking about
+               dataMsg: null, bkPend: null, bkFile: null }; // Your data: the last message, a backup file picked to restore (not yet confirmed), a backup to download
   // doneFrom (runs): "finish" just finished, "runs" from Recent runs on the Run screen, "acts" from Activities on home
   // Which finish screen is open, kept for this browser tab only (sessionStorage, not the saved runs), so if iPhone
   // reloads the page while a run's finish screen is open, it comes back. Ignored after 30 minutes.
@@ -3242,6 +3256,7 @@ void main(){
     h += "</div>";
     h += '<button type="button" class="btn wide" data-act="workouts">Select workout</button>';
     h += actsHtml();
+    h += dataHtml();
     h += "</section>";
     app.innerHTML = h;
   }
@@ -4338,6 +4353,175 @@ void main(){
     perExercise(r).forEach((x) => lines.push(x.name + ": " + x.val + (x.reps ? " (" + x.reps + ")" : "")));
     return lines.join("\n");
   }
+  // ----- Back up and restore (v2) -----
+  // A backup is one .json file holding every item this page has saved on the phone under a "sub41-" name (runs, strength,
+  // padel, week changes, routes, and anything older pages saved), each kept exactly as stored: the saved text itself, not
+  // re-written, so a restore puts back the same data byte for byte. Nothing in the app's own saved data is changed by a backup.
+  // Restore reads the file, shows what's in it next to what's on the phone now, and changes nothing until you confirm.
+  // If the phone refuses to save any of it, everything is put back as it was. The page then reloads to read it in.
+  const BK_PREFIX = "sub41-", BK_APP = "sub41-training-backup", BK_DONE = "sub41-v2-restored"; // BK_DONE: sessionStorage, for the message after the reload
+  function bkKeys() {
+    const out = [];
+    try { for (let i = 0; i < localStorage.length; i++) { const k = localStorage.key(i); if (k && k.indexOf(BK_PREFIX) === 0) out.push(k); } } catch (e) {}
+    return out.sort();
+  }
+  function bkRead() {
+    const items = {};
+    bkKeys().forEach((k) => { try { const v = localStorage.getItem(k); if (v != null) items[k] = v; } catch (e) {} });
+    return items;
+  }
+  // What a set of saved items holds, counted the way you'd say it. Week changes: sessions moved off their planned day.
+  function bkCount(items) {
+    const j = (k) => { try { return items[k] != null ? JSON.parse(items[k]) : null; } catch (e) { return null; } };
+    const r = j(RKEY), s = j(SKEY), p = j(PKEY), w = j(WKKEY), rt = j(RTKEY);
+    let moves = 0;
+    if (w && typeof w === "object") {
+      if (Array.isArray(w.every)) moves += w.every.length;
+      if (w.weeks && typeof w.weeks === "object") Object.keys(w.weeks).forEach((k) => {
+        const o = w.weeks[k], plan = +k === 10 ? WK_PLAN10 : WK_PLAN;
+        if (o && typeof o === "object") Object.keys(o).forEach((id) => { if (o[id] !== plan[id]) moves++; });
+      });
+    }
+    return {
+      runs: r && Array.isArray(r.history) ? r.history.filter((x) => x && x.date).length : 0,
+      lifts: s && Array.isArray(s.sessions) ? s.sessions.length : 0, open: !!(s && s.current),
+      padel: p && Array.isArray(p.items) ? p.items.length : 0,
+      routes: rt && Array.isArray(rt.routes) ? rt.routes.length : 0, moves: moves
+    };
+  }
+  function bkSummary(c) {
+    const n = (x, one, many) => x + " " + (x === 1 ? one : many);
+    const parts = [n(c.runs, "run", "runs"), n(c.lifts, "strength session", "strength sessions"), c.padel + " padel"];
+    if (c.routes) parts.push(n(c.routes, "route map", "route maps"));
+    if (c.moves) parts.push(n(c.moves, "week change", "week changes"));
+    if (c.open) parts.push("an unfinished strength session");
+    return andList(parts);
+  }
+  const bkDate = (d) => d.getFullYear() + "-" + pad(d.getMonth() + 1) + "-" + pad(d.getDate());
+  function bkWhen(iso) {
+    try { const d = new Date(iso); if (isNaN(d)) return ""; return fmtDay(d) + " " + d.getFullYear() + ", " + d.toLocaleTimeString("en-GB", { hour: "2-digit", minute: "2-digit" }); } catch (e) { return ""; }
+  }
+  function bkMake() {
+    const now = new Date(), items = bkRead(), count = bkCount(items);
+    const data = { app: BK_APP, v: 1, made: now.toISOString(), page: "v2.html", count: count, items: items };
+    return { name: "sub41-backup-" + bkDate(now) + ".json", text: JSON.stringify(data, null, 2), count: count };
+  }
+  function dataSay(msg, warn, html) {
+    ui.dataMsg = msg ? { t: msg, warn: !!warn } : null;
+    const m = $("dataMsg"); if (!m) return;
+    m.className = "data-msg" + (warn ? " warn" : "");
+    m.textContent = msg || "";
+    if (msg && m.scrollIntoView) m.scrollIntoView({ block: "nearest", behavior: reduceMotion ? "auto" : "smooth" });
+  }
+  // On iPhone the share sheet opens with the file, so you can tap Save to Files. Where a browser can't share files, it downloads.
+  function backup() {
+    let bk;
+    try { bk = bkMake(); } catch (e) { dataSay("Couldn't read your saved data to back it up. Nothing was changed.", true); return; }
+    ui.bkFile = null;
+    const sum = bkSummary(bk.count);
+    let file = null;
+    try { file = new File([bk.text], bk.name, { type: "application/json" }); } catch (e) { file = null; }
+    let canFile = false;
+    try { canFile = !!(file && navigator.share && navigator.canShare && navigator.canShare({ files: [file] })); } catch (e) { canFile = false; }
+    if (!canFile) { bkDownload(bk); return; }
+    navigator.share({ files: [file], title: bk.name }).then(() => {
+      dataSay("Backup ready: " + bk.name + " (" + sum + "). If you tapped Save to Files, it's in the folder you picked.");
+    }, (err) => {
+      if (err && err.name === "AbortError") dataSay("No backup made: the share sheet was closed before you saved it. Tap Back up my data to try again.", true);
+      else { ui.bkFile = bk; dataPaint(); dataSay("The share sheet didn't open. Tap Download the backup instead.", true); }
+    });
+  }
+  function bkDownload(bk) {
+    ui.bkFile = null;
+    try {
+      const url = URL.createObjectURL(new Blob([bk.text], { type: "application/json" })), a = document.createElement("a");
+      a.href = url; a.download = bk.name; a.rel = "noopener"; a.style.display = "none";
+      document.body.appendChild(a); a.click(); a.remove();
+      setTimeout(() => { try { URL.revokeObjectURL(url); } catch (e) {} }, 60000);
+      dataPaint();
+      dataSay("Backup downloaded: " + bk.name + " (" + bkSummary(bk.count) + "). On iPhone it's in the Files app, in Downloads.");
+    } catch (e) { dataPaint(); dataSay("Couldn't save the backup file on this phone. Nothing was changed.", true); }
+  }
+  // The items in a backup file, or null if it isn't one (or is damaged): every name must start "sub41-" and every item must read back
+  function bkCheck(d) {
+    if (!d || typeof d !== "object" || d.app !== BK_APP || !d.items || typeof d.items !== "object" || Array.isArray(d.items)) return null;
+    const keys = Object.keys(d.items), items = {};
+    if (!keys.length) return null;
+    for (let i = 0; i < keys.length; i++) {
+      const k = keys[i], v = d.items[k];
+      if (k.indexOf(BK_PREFIX) !== 0 || typeof v !== "string") return null;
+      try { JSON.parse(v); } catch (e) { return null; }
+      items[k] = v;
+    }
+    return items;
+  }
+  function restorePick(file) {
+    ui.bkPend = null;
+    if (!file) return;
+    const fail = (m) => { ui.bkPend = null; dataPaint(); dataSay(m, true); };
+    if (file.size > 30e6) { fail("That file is too big to be a Sub-41 backup. Nothing was changed."); return; }
+    const rd = new FileReader();
+    rd.onload = () => {
+      let d = null;
+      try { d = JSON.parse(String(rd.result || "")); } catch (e) { d = null; }
+      const items = bkCheck(d);
+      if (!items) { fail("That file isn't a Sub-41 backup, or it's damaged. Pick a file named sub41-backup-….json. Nothing was changed."); return; }
+      ui.bkPend = { name: file.name || "backup", made: d.made, items: items, count: bkCount(items) };
+      dataSay("");
+      dataPaint();
+      const b = $("bkConfirm"); if (b && b.scrollIntoView) b.scrollIntoView({ block: "center", behavior: reduceMotion ? "auto" : "smooth" });
+    };
+    rd.onerror = () => fail("Couldn't open that file. Nothing was changed.");
+    try { rd.readAsText(file); } catch (e) { fail("Couldn't open that file. Nothing was changed."); }
+  }
+  function restoreGo() {
+    const p = ui.bkPend; if (!p) return;
+    const old = bkRead();
+    try {
+      Object.keys(old).forEach((k) => { if (!(k in p.items)) localStorage.removeItem(k); });
+      Object.keys(p.items).forEach((k) => localStorage.setItem(k, p.items[k]));
+      const now = bkRead();
+      if (!Object.keys(p.items).every((k) => now[k] === p.items[k]) || !Object.keys(now).every((k) => k in p.items)) throw new Error("not saved");
+    } catch (e) {
+      try { bkKeys().forEach((k) => { if (!(k in old)) localStorage.removeItem(k); }); Object.keys(old).forEach((k) => localStorage.setItem(k, old[k])); } catch (x) {}
+      ui.bkPend = null; dataPaint();
+      dataSay("The phone wouldn't save the backup, so nothing was changed. Your data is as it was.", true);
+      return;
+    }
+    try { sessionStorage.setItem(BK_DONE, JSON.stringify({ sum: bkSummary(p.count), at: Date.now() })); sessionStorage.removeItem(OPEN_KEY); } catch (e) {}
+    location.reload();
+  }
+  function dataInner() {
+    let h = '<button type="button" class="btn" data-act="backup">Back up my data</button>';
+    if (ui.bkFile) h += '<button type="button" class="btn primary" data-act="bk-download">Download the backup instead</button>';
+    h += '<input type="file" id="restoreFile" class="sr-only" tabindex="-1"><label class="btn" for="restoreFile">Restore from backup</label>';
+    const m = ui.dataMsg;
+    h += '<p class="data-msg' + (m && m.warn ? " warn" : "") + '" id="dataMsg" role="status">' + esc(m ? m.t : "") + "</p>";
+    const p = ui.bkPend;
+    if (p) {
+      const here = bkCount(bkRead()), when = bkWhen(p.made), fewer = [];
+      if (p.count.runs < here.runs) fewer.push(here.runs - p.count.runs + (here.runs - p.count.runs === 1 ? " run" : " runs"));
+      if (p.count.lifts < here.lifts) fewer.push(here.lifts - p.count.lifts + (here.lifts - p.count.lifts === 1 ? " strength session" : " strength sessions"));
+      if (p.count.padel < here.padel) fewer.push(here.padel - p.count.padel + " padel");
+      h += '<div class="confirm" id="bkConfirm" role="group" aria-labelledby="bkQ"><p class="q" id="bkQ">Restore this backup?</p>' +
+        '<p class="soft">' + esc(p.name) + (when ? " · made " + esc(when) : "") + "</p>" +
+        '<p>In the backup: <span class="data-count">' + esc(bkSummary(p.count)) + "</span>.</p>" +
+        '<p>On this phone now: <span class="data-count">' + esc(bkSummary(here)) + "</span>.</p>" +
+        (fewer.length ? '<p class="wk-warn-line">⚠︎ The backup has ' + esc(andList(fewer)) + " fewer than this phone. They'd be lost.</p>" : "") +
+        '<p class="soft">Restoring replaces everything the app has saved on this phone with what\'s in the backup. Anything logged since the backup was made goes. If you\'re not sure, tap Back up my data first.</p>' +
+        '<button type="button" class="btn danger-fill" data-act="bk-go">Replace my data with this backup</button>' +
+        '<button type="button" class="link-btn" data-act="bk-cancel">Cancel</button></div>';
+    }
+    return h;
+  }
+  function dataHtml() {
+    return '<section class="data" aria-labelledby="dataTitle"><h2 class="section-title" id="dataTitle">Your data</h2>' +
+      '<p class="soft">Your runs, strength sessions, padel, week changes and route maps are saved on this phone, in this browser. Back them up to a file before an update, or to keep a copy.</p>' +
+      '<div class="data-box" id="dataBox">' + dataInner() + "</div></section>";
+  }
+  // Only the Your data box is re-drawn, so home keeps its place
+  function dataPaint() { const b = $("dataBox"); if (b) b.innerHTML = dataInner(); }
+
   function renderGallery() {
     document.body.setAttribute("data-phase", "idle");
     const km = /[?&]k=([0-9.]+)/.exec(location.search), k = km ? Math.min(1, Math.max(0, +km[1])) : 0, m = /[?&]m=1/.test(location.search) ? "1" : "0";
@@ -4378,6 +4562,11 @@ void main(){
       case "del-cancel": ui.delAsk = null; delPaint(); break;
       case "del-go": deleteOpen(); break;
       case "gpx-copy": copyGpx(b); break;
+      // back up and restore (v2)
+      case "backup": backup(); break;
+      case "bk-download": if (ui.bkFile) bkDownload(ui.bkFile); break;
+      case "bk-go": restoreGo(); break;
+      case "bk-cancel": ui.bkPend = null; dataPaint(); dataSay("Restore cancelled. Nothing was changed."); break;
       case "go-run": {
         ui.view = "runSetup"; ui.rKind = b.getAttribute("data-k") || null; ui.rVar = b.getAttribute("data-v") || null;
         ui.rWeek = b.getAttribute("data-w") ? +b.getAttribute("data-w") : null; ui.lastLift = null; ui.liftFrom = null; ui.copyText = null;
@@ -4444,6 +4633,7 @@ void main(){
     }
   });
   app.addEventListener("change", (e) => {
+    if (e.target.id === "restoreFile") { const f = e.target.files && e.target.files[0]; restorePick(f || null); try { e.target.value = ""; } catch (x) {} return; }
     if (e.target.id === "rWeekSel") { const v = +e.target.value; ui.rWeek = v === Math.min(planWeek(), 10) ? null : v; render(); }
     if (e.target.id === "sWeekSel") { const v = +e.target.value; ui.sWeek = v === planWeek() ? null : v; ui.preview = null; render(); }
     if (e.target.id === "gpxTrim") {
@@ -4667,6 +4857,16 @@ void main(){
     if (o && o.id && Date.now() - o.at < 30 * 60000 && !C && location.hash !== "#figures") reopened = openRun(o.id, o.from === "runs" || o.from === "acts" ? o.from : "finish");
   } catch (e) {}
   if (!reopened) render();
+  // After a restore, the page reloads to read the restored data in; this says what came back
+  try {
+    const d = JSON.parse(sessionStorage.getItem(BK_DONE) || "null");
+    sessionStorage.removeItem(BK_DONE);
+    if (d && d.sum && Date.now() - d.at < 60000) {
+      ui.dataMsg = { t: "Restored from your backup: " + d.sum + ".", warn: false }; dataPaint();
+      wkToast("Restored from your backup: " + d.sum + ".", false);
+      clearTimeout(wkToastTimer); wkToastTimer = setTimeout(() => { wkToastEl.hidden = true; }, 8000);
+    }
+  } catch (e) {}
   requestAnimationFrame(animate);
 })();
 </script>
