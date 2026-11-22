@@ -500,8 +500,15 @@ body[data-phase="work"] .swap { color: var(--fg); }
 .act-empty { color: var(--fg-soft); font-size: 0.92rem; padding: 0.65rem 0; border-bottom: 1px solid var(--line); }
 button.done-tag { appearance: none; border: 0; background: none; font: inherit; font-weight: 700; color: var(--good); padding: 0 0 0 0.5rem; min-height: 2.75rem; cursor: pointer; touch-action: manipulation; }
 button.done-tag:focus-visible { outline: 3px solid var(--accent); outline-offset: 2px; }
-.week-list .w > .wk-padel { display: flex; align-items: center; justify-content: space-between; gap: 0.5rem; }
-.week-list .wk-padel .btn.small { min-height: 2.5rem; }
+.week-list .w > .wk-padel, .week-list .w > .wk-mark { display: flex; align-items: center; justify-content: space-between; gap: 0.5rem; }
+.week-list .wk-padel .btn.small, .week-list .wk-mark .btn.small { min-height: 2.5rem; }
+/* Mark done (v2): Start and Mark done side by side on today's sessions, and the form for a workout done without the app */
+.today-btns { display: flex; flex-direction: column; gap: 0.4rem; flex-shrink: 0; }
+.today-btns .btn { width: 100%; }
+.log-form .tm-fields { display: grid; grid-template-columns: 1fr 1fr; gap: 0.75rem; }
+.log-form .log-mins { max-width: 10rem; }
+.date-in { appearance: none; -webkit-appearance: none; display: block; width: 100%; min-height: calc(2.75rem + 4px); padding: 0 0.75rem; border: 2px solid var(--fg); border-radius: 0.75rem; background: transparent; color: var(--fg); font-weight: 700; line-height: calc(2.75rem); }
+.date-in::-webkit-date-and-time-value { text-align: left; }
 .btn.danger { border-color: var(--danger); color: var(--danger); }
 .btn.danger-fill { background: var(--danger); border-color: var(--danger); color: var(--bg); }
 .del-box .confirm { margin-bottom: 0; }
@@ -3363,7 +3370,8 @@ void main(){
                wkEdit: false, wkUndo: [], // Edit week is on; earlier arrangements for Undo (this visit only)
                liftFrom: null, lastPadel: null, homeTop: 0, delAsk: null, // strength opened from Activities; padel open; where Activities was scrolled to; which activity Delete is asking about
                dataMsg: null, bkPend: null, bkFile: null, // Your data: the last message, a backup file picked to restore (not yet confirmed), a backup to download
-               rEnv: "outdoor", tmEdit: false }; // treadmill (v2): Outdoor or Treadmill on the Run screen; changing a treadmill run's distance
+               rEnv: "outdoor", tmEdit: false, // treadmill (v2): Outdoor or Treadmill on the Run screen; changing a treadmill run's distance
+               log: null }; // Mark done (v2): the form for a workout done without the app (see logOpen)
   // doneFrom (runs): "finish" just finished, "runs" from Recent runs on the Run screen, "acts" from Activities on home
   // Which finish screen is open, kept for this browser tab only (sessionStorage, not the saved runs), so if iPhone
   // reloads the page while a run's finish screen is open, it comes back. Ignored after 30 minutes.
@@ -3408,6 +3416,7 @@ void main(){
       case "lift": return C ? renderLift() : (ui.view = "home", renderHome());
       case "liftDone": return ui.lastLift ? renderLiftDone() : (ui.view = "home", renderHome());
       case "padelDone": return ui.lastPadel ? renderPadelDone() : (ui.view = "home", renderHome());
+      case "logDone": return ui.log ? renderLogDone() : (ui.view = "home", renderHome());
       default: ui.view = "home"; return renderHome();
     }
   }
@@ -3424,6 +3433,9 @@ void main(){
     if (it.t === "padel") return "Counts as a hard session";
     return "";
   }
+  // Mark done (v2): the button that opens the form for a session you did without the app
+  const logBtnHtml = (it, w, d, from, cls) => '<button type="button" class="btn small' + (cls ? " " + cls : "") + '" data-act="log-open" data-from="' + from + '" data-t="' + it.t + '"' +
+    (it.v ? ' data-v="' + it.v + '"' : "") + (it.s ? ' data-s="' + it.s + '"' : "") + ' data-w="' + w + '" data-d="' + d + '" aria-label="Mark ' + esc(it.label) + ' done">Mark done</button>';
   const homeLabel = (pre, w) => '<p class="label">Sub-41 v2 · ' + (pre ? "Week 1 starts Mon 16 Nov" : shortWeek(planWeek()) + (isLight(w) ? " · lighter" : w === 10 ? " · race week" : "")) + "</p>";
 
   // ----- Activities (v2): your runs, strength sessions and padel, grouped by plan week, newest first -----
@@ -3433,16 +3445,16 @@ void main(){
   const dayText = (d) => (d ? fmtDay(d) : "");
   // A run's average pace: its own average, or for intervals the average over the intervals (as in Recent runs)
   function runAvg(r) {
-    if (runKind(r) !== "intervals") return r.avg;
+    if (runKind(r) !== "intervals" || isManual(r)) return r.avg;
     let t = 0, d = 0; (r.reps || []).forEach((x) => { if (x.dist >= 50) { t += x.time; d += x.dist; } });
     return d ? t / (d / 1000) : null;
   }
   function allActs() {
     const out = [];
     RS.history.forEach((r) => { const avg = runAvg(r), tm = isTm(r), est = tm && r.tm && r.tm.ask ? "~" : ""; out.push({ k: "run", id: r.date, date: r.date, w: okWeek(r.w, r.date), dist: r.dist || 0, title: r.title || "Run", tm: tm,
-      sub: [dayText(r.date), tm ? "Treadmill" : "Outdoor", r.dist != null ? est + fmtDist(r.dist) : "", r.dur != null ? fmtClock(r.dur * 1000) : "", avg ? est + fmtPace(avg) + "/km" : ""] }); });
+      sub: [dayText(r.date), tm ? "Treadmill" : "Outdoor", isManual(r) ? "Manual" : "", r.dist != null ? est + fmtDist(r.dist) : "", r.dur != null ? fmtClock(r.dur * 1000) : "", avg ? est + fmtPace(avg) + "/km" : ""] }); });
     S.sessions.forEach((x) => out.push({ k: "lift", id: liftKey(x), date: x.date || "", w: okWeek(x.week, x.date), title: sessName(x),
-      sub: [dayText(x.date), "Strength", x.durationSec != null ? Math.max(1, Math.round(x.durationSec / 60)) + " min" : ""] }));
+      sub: [dayText(x.date), "Strength", isManual(x) ? "Manual" : "", x.durationSec != null ? Math.max(1, Math.round(x.durationSec / 60)) + " min" : ""] }));
     PD.items.forEach((p) => out.push({ k: "padel", id: p.id, date: p.date, w: p.w, title: "Padel", sub: [dayText(p.date), "Padel"] }));
     return out;
   }
@@ -3500,6 +3512,148 @@ void main(){
     wkToast("Padel saved for " + fmtDay(when) + ".", false);
   }
 
+  // ----- Mark done (v2): a run or strength session you did without the app -----
+  // Saved with the same names as one done in the app, plus src: "manual" (new field only), so it ticks off the session,
+  // shows in Activities and counts towards the week. Runs keep empty reps / kms / blocks so the original page can still list them.
+  // Strength is saved with no sets, so it never changes the app's weight suggestions (they come from your last session in the app).
+  // ui.log = { t: "easy" | "intervals" | "long" | "strength", v, s, w: plan week, from: the screen to go back to,
+  //            date: "YYYY-MM-DD", env: "outdoor" | "treadmill", km, min, sec (runs), mins (strength): the form as typed }
+  const isManual = (x) => !!(x && x.src === "manual");
+  const ymd = (d) => d.getFullYear() + "-" + pad(d.getMonth() + 1) + "-" + pad(d.getDate());
+  function ymdDate(s) {
+    const m = /^(\d{4})-(\d\d)-(\d\d)$/.exec(String(s || ""));
+    if (!m) return null;
+    const d = new Date(+m[1], +m[2] - 1, +m[3]);
+    return d.getMonth() === +m[2] - 1 && d.getDate() === +m[3] ? d : null;
+  }
+  // Keeps the saved list in date order, so "the latest" still means the latest when a session is logged afterwards
+  function insertByDate(arr, rec) {
+    let i = arr.length;
+    while (i > 0 && String(arr[i - 1].date || "") > rec.date) i--;
+    arr.splice(i, 0, rec);
+  }
+  // When it happened: now if it's today, otherwise midday that day. A second apart from anything already saved at that time.
+  function logWhen(day, taken) {
+    let t = ymd(day) === ymd(new Date()) ? Date.now() : new Date(day.getFullYear(), day.getMonth(), day.getDate(), 12).getTime();
+    while (taken(new Date(t).toISOString())) t += 1000;
+    return new Date(t).toISOString();
+  }
+  const logSessId = (t, v, s) => (t === "strength" ? (s === "B" ? "s2" : "s1") : t === "easy" ? (v === "thu" ? "e2" : "e1") : t === "intervals" ? "int" : "long");
+  function logPlan(L) {
+    if (L.t === "easy") return easyPlan(L.w, L.v);
+    if (L.t === "intervals") return intervalPlan(L.w);
+    return longPlan(L.w);
+  }
+  function logName(L) {
+    if (L.t === "strength") return SESSIONS[L.s].name;
+    if (L.t === "easy") return L.v === "thu" ? "Easy run with strides" : "Easy run";
+    if (L.t === "intervals") return "Intervals";
+    return L.w >= 10 ? "Race" : "Long run";
+  }
+  function logTitle(L) { const p = logPlan(L); return L.t === "intervals" ? iTitle(p) : p.title; }
+  // Opens the form, filled in with the plan's distance and time, dated the day the session is planned for (or today, if that's later)
+  function logOpen(o) {
+    const w = Math.max(1, o.w || homeWeek()), L = { t: o.t, v: o.t === "easy" ? (o.v === "thu" ? "thu" : "mon") : null, s: o.t === "strength" ? (o.s === "B" ? "B" : "A") : null,
+      w: o.t === "strength" ? w : Math.min(w, 10), from: o.from || "home", env: o.env === "treadmill" ? "treadmill" : "outdoor" };
+    const today = new Date(), t0 = new Date(today.getFullYear(), today.getMonth(), today.getDate());
+    const d = o.d != null && isFinite(o.d) ? o.d : wkDays(L.w)[logSessId(L.t, L.v, L.s)];
+    const planned = d == null || beforePlan() ? t0 : dateOf(L.w, d);
+    L.date = ymd(planned <= t0 ? planned : t0);
+    if (L.t === "strength") L.mins = String(sessMins(L.s, L.w));
+    else {
+      const p = logPlan(L), m = L.t === "intervals" ? Math.round(iTurnPlan(p).total / 100) * 100 : p.total, secs = Math.round(L.t === "intervals" ? iEst(p) : contEst(p));
+      L.km = (m / 1000).toFixed(2); L.min = String(Math.floor(secs / 60)); L.sec = pad(secs % 60);
+    }
+    if (!R) stopGps();
+    ui.log = L; ui.view = "logDone"; ui.lastLift = null; ui.liftFrom = null; ui.copyText = null;
+    render();
+    const v = app.querySelector(".view"); if (v) v.scrollTop = 0;
+  }
+  function logBack() {
+    const L = ui.log, from = L ? L.from : "home";
+    ui.log = null;
+    ui.view = from === "runSetup" || from === "liftSetup" || from === "workouts" ? from : "home";
+    if (ui.view === "runSetup" && ui.rEnv !== "treadmill") startGps();
+    render();
+  }
+  // The distance and time as typed: { km, secs }, either of them null if not valid yet
+  function logRead(L) {
+    const dv = String(L.km || "").trim().replace(",", "."), km = /^\d*\.?\d+$/.test(dv) ? parseFloat(dv) : NaN;
+    const mv = String(L.min || "").trim(), sv = String(L.sec || "").trim();
+    const okT = (mv || sv) && /^\d{0,3}$/.test(mv) && /^\d{0,2}$/.test(sv) && !(+sv > 59);
+    return { km: km >= 0.1 && km <= 80 ? km : null, secs: okT ? (+mv || 0) * 60 + (+sv || 0) : null };
+  }
+  function logPaceText(L) {
+    const x = logRead(L);
+    return x.km && x.secs ? "Average " + fmtPace(x.secs / x.km) + "/km" : "";
+  }
+  function renderLogDone() {
+    document.body.setAttribute("data-phase", "idle");
+    const L = ui.log, run = L.t !== "strength", max = ymd(new Date());
+    const back = { workouts: "‹ Workouts", runSetup: "‹ Run", liftSetup: "‹ Strength" }[L.from] || "‹ Home";
+    let h = '<section class="view scroll log-form" aria-labelledby="logTitle"><button type="button" class="link-btn back" data-act="log-back">' + back + "</button>";
+    const nm = logName(L), what = run ? logTitle(L) : SESSIONS[L.s].focus; // the race's title already starts "Race:"
+    h += '<header><p class="label">Sub-41 plan · ' + esc(shortWeek(L.w)) + '</p><h1 class="title" id="logTitle">Mark done</h1><p class="lede">' +
+      (what.indexOf(nm) === 0 ? "<strong>" + esc(what) + "</strong>" : "<strong>" + esc(nm) + "</strong>: " + esc(what)) + ", done without the app. " +
+      (run ? "The plan's distance and time are filled in. Change them to what you did (from your watch or Strava), then tap Save."
+        : "It ticks off the session for the week. Weights aren't logged, so the app keeps suggesting weights from your last session in it.") + "</p></header>";
+    h += '<div class="field"><label class="label" for="logDate">Date</label><input type="date" id="logDate" class="date-in" value="' + esc(L.date) + '" max="' + max + '"></div>';
+    if (run) h += '<div class="field"><span class="label" id="logEnvLbl">Where</span><div class="seg" role="group" aria-labelledby="logEnvLbl">' +
+      [["outdoor", "Outdoor"], ["treadmill", "Treadmill"]].map(([e, l]) => '<button type="button" data-act="log-env" data-e="' + e + '" aria-pressed="' + (L.env === e) + '">' + (e === "treadmill" ? TM_ICON : "") + l + "</button>").join("") + "</div></div>";
+    h += '<div class="panel" role="group" aria-label="' + (run ? "Distance and time" : "Time") + '">';
+    if (run) {
+      h += '<div class="tm-fields"><div class="field"><label class="label" for="logKm">Distance</label><span class="tm-in"><input id="logKm" type="text" inputmode="decimal" autocomplete="off" enterkeyhint="done" value="' + esc(L.km) + '"><span>km</span></span></div>' +
+        '<div class="field"><span class="label" id="logTimeLbl">Time</span><span class="tm-in" role="group" aria-labelledby="logTimeLbl"><input id="logMin" type="text" inputmode="numeric" autocomplete="off" enterkeyhint="done" aria-label="Minutes" value="' + esc(L.min) + '"><span>:</span>' +
+        '<input id="logSec" type="text" inputmode="numeric" autocomplete="off" enterkeyhint="done" aria-label="Seconds" value="' + esc(L.sec) + '"></span></div></div>' +
+        '<p class="half-line" id="logPace">' + esc(logPaceText(L)) + "</p>";
+    } else {
+      h += '<div class="field"><label class="label" for="logMins">How long it took</label><span class="tm-in log-mins"><input id="logMins" type="text" inputmode="numeric" autocomplete="off" enterkeyhint="done" value="' + esc(L.mins) + '"><span>min</span></span></div>';
+    }
+    h += '<p class="err" id="logErr" role="alert"></p></div>';
+    h += '<div class="sticky-bar"><button type="button" class="btn primary wide" data-act="log-save">Save</button><button type="button" class="link-btn" data-act="log-back" style="width:100%">Cancel</button></div></section>';
+    app.innerHTML = h;
+  }
+  function logSave() {
+    const L = ui.log; if (!L) return;
+    const err = (m, id) => { const e = $("logErr"); if (e) e.textContent = m; const i = id && $(id); if (i) i.focus(); };
+    const day = ymdDate(L.date), t0 = new Date(), today = new Date(t0.getFullYear(), t0.getMonth(), t0.getDate());
+    if (!day) { err("Pick the date you did it.", "logDate"); return; }
+    if (day > today) { err("That date hasn't happened yet. Pick today or an earlier day.", "logDate"); return; }
+    let msg;
+    if (L.t === "strength") {
+      const mv = String(L.mins || "").trim(), mins = /^\d{1,3}$/.test(mv) ? +mv : NaN;
+      if (!(mins >= 1 && mins <= 300)) { err("Enter how long it took in minutes, like 30.", "logMins"); return; }
+      const rec = { pv: 2, id: "m" + Date.now().toString(36), type: L.s, week: L.w, date: logWhen(day, (iso) => S.sessions.some((x) => x.date === iso)),
+                    durationSec: mins * 60, sets: [], complete: true, src: "manual" };
+      insertByDate(S.sessions, rec);
+      if (S.sessions.length > 300) S.sessions = S.sessions.slice(-300);
+      saveStrength();
+      msg = SESSIONS[L.s].name + " saved for " + fmtDay(rec.date) + ".";
+    } else {
+      const x = logRead(L);
+      if (x.km == null) { err("Enter the distance in km, like 5.02.", "logKm"); return; }
+      if (x.secs == null) { err("Enter the time as minutes and seconds, like 27 : 31.", "logMin"); return; }
+      if (x.secs < 60 || x.secs > 6 * 3600) { err("That time doesn't look right. Enter minutes and seconds, like 27 : 31.", "logMin"); return; }
+      if (x.secs / x.km < 120) { err("That's quicker than 2:00/km. Check the distance and time.", "logKm"); return; }
+      const p = logPlan(L), dist = Math.round(x.km * 1000);
+      const rec = { kind: L.t === "long" ? p.kind : L.t, date: logWhen(day, (iso) => RS.history.some((r) => r.date === iso)), w: L.w, title: logTitle(L),
+                    dur: x.secs, dist: dist, avg: x.secs / (dist / 1000), complete: true, src: "manual" };
+      if (L.t === "easy") rec.v = L.v;
+      if (L.t === "intervals") { rec.zone = p.zone; rec.reps = []; } else { rec.kms = []; rec.blocks = []; }
+      if (L.env === "treadmill") rec.env = "treadmill";
+      insertByDate(RS.history, rec);
+      RS.history = RS.history.slice(-RUN_KEEP);
+      saveRuns();
+      msg = logName(L) + " saved for " + fmtDay(rec.date) + ".";
+    }
+    const from = L.from;
+    ui.log = null;
+    ui.view = from === "workouts" ? "workouts" : "home";
+    render();
+    if (ui.view === "home") app.scrollTop = 0;
+    wkToast(msg, false);
+  }
+
   function renderHome() {
     document.body.setAttribute("data-phase", "idle");
     const pre = beforePlan(), w = homeWeek(), di = pre ? 0 : dayIndex(), sched = weekSchedule(w);
@@ -3518,9 +3672,13 @@ void main(){
       if (isDone(it, w)) {
         const a = actFor(it, w);
         btn = a ? '<button type="button" class="done-tag" data-act="open-act" data-k="' + a.k + '" data-id="' + esc(a.id) + '" aria-label="Done. Open ' + esc(it.label) + '">Done ✓ ›</button>' : '<span class="done-tag">Done ✓</span>';
-      } else if (it.t === "strength") btn = '<button type="button" class="btn small primary" data-act="go-lift" data-s="' + it.s + '">Start</button>';
-      else if (it.t === "padel") btn = '<button type="button" class="btn small primary" data-act="pad-done" data-w="' + w + '" data-d="' + di + '">Mark done</button>';
-      else if (it.t !== "note") btn = '<button type="button" class="btn small primary" data-act="go-run" data-k="' + it.t + '"' + (it.v ? ' data-v="' + it.v + '"' : "") + ">Start</button>";
+      } else if (it.t === "padel") btn = '<button type="button" class="btn small primary" data-act="pad-done" data-w="' + w + '" data-d="' + di + '">Mark done</button>';
+      else if (it.t !== "note") {
+        // Start, and Mark done (v2) for when you did it without the app
+        const start = it.t === "strength" ? '<button type="button" class="btn small primary" data-act="go-lift" data-s="' + it.s + '">Start</button>'
+          : '<button type="button" class="btn small primary" data-act="go-run" data-k="' + it.t + '"' + (it.v ? ' data-v="' + it.v + '"' : "") + ">Start</button>";
+        btn = '<div class="today-btns">' + start + logBtnHtml(it, w, di, "home", "") + "</div>";
+      }
       h += '<div class="today-item"><div><p class="what">' + esc(it.label) + '</p><p class="sub">' + esc(itemSub(it, w) || (it.label === "Padel" ? "Counts as a hard session" : "Recovery")) + "</p></div>" + btn + "</div>";
     });
     h += "</div>";
@@ -3558,6 +3716,9 @@ void main(){
         // Padel: Mark done on today or an earlier day this week, not while you're editing the week
         else if (it.t === "padel" && !done && !pre && d <= di && planWeek() <= 10)
           h += '<span class="wk-padel"><span>' + esc(it.label) + '</span><button type="button" class="btn small" data-act="pad-done" data-w="' + w + '" data-d="' + d + '">Mark done</button></span>';
+        // Runs and strength (v2): Mark done the same way, for one you did without the app
+        else if (it.id && it.t !== "padel" && !done && !pre && d <= di && planWeek() <= 10)
+          h += '<span class="wk-mark"><span>' + esc(it.label) + "</span>" + logBtnHtml(it, w, d, "workouts", "") + "</span>";
         else h += '<span class="' + (it.t === "note" ? "muted" : "") + '">' + esc(it.label) + tick + "</span>";
       });
       warns[d].forEach((m) => { h += '<span class="wk-warn">⚠︎ ' + esc(m) + "</span>"; });
@@ -3644,7 +3805,8 @@ void main(){
     h += runHistoryHtml();
     h += '<p class="fine">Keep this page open with the screen on for the whole run. If the screen locks, the timer, voice and GPS stop.</p>';
     h += '<div class="sticky-bar">' + (wakeWontWork() ? '<p class="banner" role="status"><span class="dot warn"></span>' + esc(WAKE_WARN) + "</p>" : "") +
-      '<button type="button" class="btn primary wide" data-act="run-start">Start ' + (tm ? "treadmill " : "") + (kind === "intervals" ? "intervals" : kind === "easy" ? "easy run" : p.kind === "race" ? "race" : "long run") + "</button></div></section>";
+      '<button type="button" class="btn primary wide" data-act="run-start">Start ' + (tm ? "treadmill " : "") + (kind === "intervals" ? "intervals" : kind === "easy" ? "easy run" : p.kind === "race" ? "race" : "long run") + "</button>" +
+      '<button type="button" class="link-btn" data-act="log-open" data-from="runSetup" style="width:100%">Done it without the app? Mark done</button></div></section>';
     app.innerHTML = h;
   }
   // The treadmill version of the session card (v2): each part's speed in km/h, its range, and its time at that speed
@@ -3683,11 +3845,8 @@ void main(){
     const withMap = new Set(RT.routes.map((x) => x.id));
     h += '<p class="hint">Tap a run to open its finish screen: splits, map and summary.</p><ul class="run-list">';
     hs.forEach((r) => {
-      const kind = runKind(r);
-      let avg = r.avg;
-      if (kind === "intervals") { let t = 0, d = 0; (r.reps || []).forEach((x) => { if (x.dist >= 50) { t += x.time; d += x.dist; } }); avg = d ? t / (d / 1000) : null; }
-      const est = isTm(r) && r.tm && r.tm.ask ? "~" : "";
-      const sub = [isTm(r) ? '<span class="tm-tag">' + TM_ICON + "Treadmill</span>" : "Outdoor"].concat([r.dist != null ? est + fmtDist(r.dist) : "", r.dur != null ? fmtClock(r.dur * 1000) : "", withMap.has(r.date) ? "map" : ""].filter(Boolean).map(esc)).join(" · ");
+      const avg = runAvg(r), est = isTm(r) && r.tm && r.tm.ask ? "~" : "";
+      const sub = [isTm(r) ? '<span class="tm-tag">' + TM_ICON + "Treadmill</span>" : "Outdoor"].concat([isManual(r) ? "manual" : "", r.dist != null ? est + fmtDist(r.dist) : "", r.dur != null ? fmtClock(r.dur * 1000) : "", withMap.has(r.date) ? "map" : ""].filter(Boolean).map(esc)).join(" · ");
       h += '<li><button type="button" class="run-row" data-act="open-run" data-id="' + esc(r.date) + '"><span class="rr-main"><span class="rr-title">' + esc(fmtDay(r.date)) + " · " + esc(r.title || "Run") + '</span>' +
         (sub ? '<span class="rr-sub">' + sub + "</span>" : "") + '</span><span class="rr-pace">' + (avg ? (isTm(r) && r.tm && r.tm.ask ? "~" : "") + fmtPace(avg) + "/km" : "–") + ' ›</span></button></li>';
     });
@@ -3994,6 +4153,7 @@ void main(){
   }
   function runSummaryText(r) {
     const lines = ["Sub-41 " + (runKind(r) === "intervals" ? "intervals" : runKind(r) + " run") + " (" + (isTm(r) ? "Treadmill" : "Outdoor") + "): week " + r.w + ", " + r.title + ", " + fmtDay(r.date)];
+    if (isManual(r)) { lines.push(fmtDist(r.dist) + " in " + fmtClock(r.dur * 1000) + (r.avg ? ", average " + fmtPace(r.avg) + "/km" : ""), "Logged outside the app"); return lines.join("\n"); }
     if (isTm(r)) return tmSummaryLines(r, lines).join("\n");
     if (runKind(r) === "intervals") {
       lines.push("Total " + fmtClock(r.dur * 1000) + ", " + fmtDist(r.dist));
@@ -4097,9 +4257,11 @@ void main(){
       acts ? '<button type="button" class="link-btn back" data-act="back-acts">‹ Activities</button>' : "") +
       '<h1 class="done-title" id="doneTitle">' + (r.complete ? "Done." : "Saved.") + "</h1>";
     h += '<p class="done-meta">' + (past || acts ? esc(fmtDay(r.date)) + " · " : "") + "Week " + r.w + " · " + esc(r.title) + " · " + envHtml(r) + "</p>";
-    if (isTm(r)) h += tmEnterHtml(r);
+    const man = isManual(r); // Mark done (v2): logged outside the app, so just its distance, time and average
+    if (isTm(r) && !man) h += tmEnterHtml(r);
     let stats = "", detail = "";
-    if (isTm(r)) { const x = tmDoneParts(r); stats = x.stats; detail = x.detail; }
+    if (man) stats = "<p><strong>" + esc(fmtDist(r.dist)) + "</strong> in <strong>" + fmtClock(r.dur * 1000) + "</strong>" + (r.avg ? " · average <strong>" + fmtPace(r.avg) + "/km</strong>" : "") + "</p>";
+    else if (isTm(r)) { const x = tmDoneParts(r); stats = x.stats; detail = x.detail; }
     else if (runKind(r) === "intervals") {
       let t = 0, d = 0; repsOf(r).forEach((x) => { if (x.dist >= 50) { t += x.time; d += x.dist; } });
       const z = ZONES[r.zone];
@@ -4123,7 +4285,7 @@ void main(){
       h += '<section class="route" aria-label="Map of your route"><div class="route-map" id="routeMap"></div>' + routeLegend(g) +
         '<p class="route-note" id="routeNote"' + (MV.note ? "" : " hidden") + ">" + (MV.note || "") + "</p>" +
         '<p class="fine">Tap ' + (runKind(r) === "intervals" ? "an interval" : "a km") + " below to show it on the map. Pinch to zoom; move the map with two fingers.</p></section>";
-    } else h += '<p class="fine">' + (isTm(r) ? "Treadmill run: no GPS indoors, so there is no map or GPX." : "No GPS route was recorded for this run, so there is no map.") + "</p>";
+    } else h += '<p class="fine">' + (man ? "Logged outside the app, so there are no splits or map." : isTm(r) ? "Treadmill run: no GPS indoors, so there is no map or GPX." : "No GPS route was recorded for this run, so there is no map.") + "</p>";
     h += detail;
     h += '<div class="done-actions"><button type="button" class="btn" data-act="copy-run">Copy summary</button>';
     if (ui.copyText) h += '<textarea class="copy-box" id="copyBox" readonly>' + esc(ui.copyText) + "</textarea>";
@@ -4538,7 +4700,8 @@ void main(){
     let h = '<section class="history" aria-labelledby="sHistTitle"><h2 class="section-title" id="sHistTitle">Logged sessions</h2>';
     if (!ss.length) return h + '<p class="soft">Nothing logged yet. Your first session sets your starting weights.</p></section>';
     ss.forEach((s) => {
-      h += "<details><summary><span>" + esc(fmtDay(s.date)) + " · " + esc(sessName(s)) + '</span><span class="soft">' + esc(shortWeek(s.week)) + (s.complete ? "" : " · ended early") + "</span></summary><ul>";
+      h += "<details><summary><span>" + esc(fmtDay(s.date)) + " · " + esc(sessName(s)) + '</span><span class="soft">' + esc(shortWeek(s.week)) + (isManual(s) ? " · manual" : s.complete ? "" : " · ended early") + "</span></summary><ul>";
+      if (isManual(s)) h += "<li><span>Logged outside the app</span><span>" + Math.max(1, Math.round(s.durationSec / 60)) + " min</span></li>";
       perExercise(s).forEach((r) => { h += "<li><span>" + esc(r.name) + "</span><span>" + esc(r.val) + "</span></li>"; });
       h += "</ul></details>";
     });
@@ -4594,7 +4757,8 @@ void main(){
     h += liftHistoryHtml();
     h += '<p class="fine">Keep this page open with the screen on. If the phone locks, the count stops.</p>';
     h += '<div class="sticky-bar">' + (C ? '<button type="button" class="btn primary wide" data-act="lift-resume">Resume ' + esc(SESSIONS[C.type].name) + "</button>"
-      : (w === 10 && t === "B" ? '<button type="button" class="btn primary wide" disabled>No Strength 2 in race week</button>' : '<button type="button" class="btn primary wide" data-act="lift-start">Start ' + esc(Sx.name) + "</button>")) + "</div></section>";
+      : (w === 10 && t === "B" ? '<button type="button" class="btn primary wide" disabled>No Strength 2 in race week</button>' : '<button type="button" class="btn primary wide" data-act="lift-start">Start ' + esc(Sx.name) + "</button>" +
+        '<button type="button" class="link-btn" data-act="log-open" data-from="liftSetup" style="width:100%">Done it without the app? Mark done</button>')) + "</div></section>";
     app.innerHTML = h;
   }
 
@@ -4747,9 +4911,14 @@ void main(){
     document.body.setAttribute("data-phase", "done");
     let h = '<section class="view done" aria-labelledby="doneTitle">' + (acts ? '<button type="button" class="link-btn back" data-act="back-acts">‹ Activities</button>' : "") +
       '<h1 class="done-title" id="doneTitle">' + (r.complete ? "Logged." : "Saved.") + "</h1>" +
-      '<p class="done-meta">' + (acts && r.date ? esc(fmtDay(r.date)) + " · " : "") + esc(sessName(r)) + " · " + esc(shortWeek(r.week)) + " · " + Math.max(1, Math.round(r.durationSec / 60)) + ' min</p><ul class="summary">';
-    perExercise(r).forEach((x) => { h += "<li><span>" + esc(x.name) + "</span><span>" + esc(x.val) + (x.reps ? '<br><span class="soft">' + esc(x.reps) + "</span>" : "") + "</span></li>"; });
-    h += '</ul><p class="done-next">' + esc(nextHint(r)) + "</p>";
+      '<p class="done-meta">' + (acts && r.date ? esc(fmtDay(r.date)) + " · " : "") + esc(sessName(r)) + " · " + esc(shortWeek(r.week)) + " · " + Math.max(1, Math.round(r.durationSec / 60)) + " min</p>";
+    if (isManual(r)) h += '<p class="fine">Logged outside the app, so there are no weights or reps. The app keeps suggesting weights from your last session in it.</p>';
+    else {
+      h += '<ul class="summary">';
+      perExercise(r).forEach((x) => { h += "<li><span>" + esc(x.name) + "</span><span>" + esc(x.val) + (x.reps ? '<br><span class="soft">' + esc(x.reps) + "</span>" : "") + "</span></li>"; });
+      h += "</ul>";
+    }
+    h += '<p class="done-next">' + esc(nextHint(r)) + "</p>";
     h += '<div class="done-actions"><button type="button" class="btn" data-act="copy-lift">Copy summary</button>';
     if (ui.copyText) h += '<textarea class="copy-box" id="copyBox" readonly>' + esc(ui.copyText) + "</textarea>";
     h += "</div>" + delBoxHtml();
@@ -4853,6 +5022,7 @@ void main(){
   }
   function liftSummaryText(r) {
     const lines = [sessName(r) + ", " + shortWeek(r.week).toLowerCase() + ", " + fmtDay(r.date)];
+    if (isManual(r)) lines.push(Math.max(1, Math.round(r.durationSec / 60)) + " min, logged outside the app");
     perExercise(r).forEach((x) => lines.push(x.name + ": " + x.val + (x.reps ? " (" + x.reps + ")" : "")));
     return lines.join("\n");
   }
@@ -5053,14 +5223,26 @@ void main(){
     unlockAudio();
     const act = b.getAttribute("data-act");
     switch (act) {
-      case "home": if (!R) stopGps(); ui.view = "home"; ui.lastRun = null; ui.lastLift = null; ui.lastPadel = null; ui.liftFrom = null; ui.copyText = null; ui.lastRoute = null; ui.hl = null; ui.gpx = null; ui.gpxMsg = ""; ui.doneFrom = null; ui.delAsk = null; mapReset(); render(); app.scrollTop = 0; break;
-      case "workouts": if (!R) stopGps(); ui.view = "workouts"; ui.lastRun = null; ui.lastLift = null; ui.lastPadel = null; ui.liftFrom = null; ui.copyText = null; ui.lastRoute = null; ui.hl = null; ui.gpx = null; ui.gpxMsg = ""; ui.doneFrom = null; ui.delAsk = null; mapReset(); render(); break;
+      case "home": if (!R) stopGps(); ui.view = "home"; ui.log = null; ui.lastRun = null; ui.lastLift = null; ui.lastPadel = null; ui.liftFrom = null; ui.copyText = null; ui.lastRoute = null; ui.hl = null; ui.gpx = null; ui.gpxMsg = ""; ui.doneFrom = null; ui.delAsk = null; mapReset(); render(); app.scrollTop = 0; break;
+      case "workouts": if (!R) stopGps(); ui.view = "workouts"; ui.log = null; ui.lastRun = null; ui.lastLift = null; ui.lastPadel = null; ui.liftFrom = null; ui.copyText = null; ui.lastRoute = null; ui.hl = null; ui.gpx = null; ui.gpxMsg = ""; ui.doneFrom = null; ui.delAsk = null; mapReset(); render(); break;
       case "open-run": openRun(b.getAttribute("data-id"), "runs"); break;
       case "back-runs": backToRuns(); break;
       // activities (v2)
       case "open-act": openAct(b.getAttribute("data-k"), b.getAttribute("data-id")); break;
       case "back-acts": backToActs(); break;
       case "pad-done": padelDone(+b.getAttribute("data-w"), +b.getAttribute("data-d")); break;
+      // Mark done (v2): a run or strength session done without the app
+      case "log-open": {
+        const from = b.getAttribute("data-from") || "home";
+        if (from === "runSetup") { const x = runPlanFor(); logOpen({ t: x.kind, v: x.kind === "easy" ? ui.rVar || defaultEasyVar() : null, w: x.w, env: ui.rEnv, from: from }); }
+        else if (from === "liftSetup") { const w = ui.sWeek || planWeek(); logOpen({ t: "strength", s: ui.sType || defaultType(w), w: w, from: from }); }
+        else logOpen({ t: b.getAttribute("data-t"), v: b.getAttribute("data-v"), s: b.getAttribute("data-s"), w: +b.getAttribute("data-w") || null,
+          d: b.getAttribute("data-d") != null ? +b.getAttribute("data-d") : null, from: from });
+        break;
+      }
+      case "log-back": logBack(); break;
+      case "log-env": if (ui.log) { ui.log.env = b.getAttribute("data-e") === "treadmill" ? "treadmill" : "outdoor"; render(); } break;
+      case "log-save": logSave(); break;
       case "del-ask": ui.delAsk = delKey(); delPaint(); break;
       case "del-cancel": ui.delAsk = null; delPaint(); break;
       case "del-go": deleteOpen(); break;
@@ -5144,12 +5326,21 @@ void main(){
     if (e.target.id === "restoreFile") { const f = e.target.files && e.target.files[0]; restorePick(f || null); try { e.target.value = ""; } catch (x) {} return; }
     if (e.target.id === "rWeekSel") { const v = +e.target.value; ui.rWeek = v === Math.min(planWeek(), 10) ? null : v; render(); }
     if (e.target.id === "sWeekSel") { const v = +e.target.value; ui.sWeek = v === planWeek() ? null : v; ui.preview = null; render(); }
+    if (e.target.id === "logDate" && ui.log) { ui.log.date = e.target.value; const er = $("logErr"); if (er) er.textContent = ""; }
     if (e.target.id === "gpxTrim") {
       RT.trim = !!e.target.checked; rtStore(); gpxSay("");
       if (ui.gpx && ui.lastRoute) { const x = routeGpx(ui.lastRoute, RT.trim); if (x) ui.gpx.text = x; else ui.gpx = null; gpxPaintOut(); }
     }
   });
   app.addEventListener("input", (e) => {
+    // Mark done (v2): keep the form as typed, so switching Outdoor / Treadmill doesn't lose it; the average pace follows
+    const lf = { logKm: "km", logMin: "min", logSec: "sec", logMins: "mins", logDate: "date" }[e.target.id];
+    if (lf && ui.log) {
+      ui.log[lf] = e.target.value;
+      const er = $("logErr"); if (er) er.textContent = "";
+      const pc = $("logPace"); if (pc) pc.textContent = logPaceText(ui.log);
+      return;
+    }
     if (e.target.id === "kgInput" && C && SETS[C.k]) {
       C.weights[SETS[C.k].ex] = parseKg(e.target.value); saveStrength();
       const er = $("kgErr"); if (er) er.textContent = "";
@@ -5158,6 +5349,7 @@ void main(){
   app.addEventListener("keydown", (e) => {
     if (e.target.id === "kgInput" && e.key === "Enter") { e.preventDefault(); e.target.blur(); }
     if (/^tm(Dist|Min|Sec)In$/.test(e.target.id) && e.key === "Enter") { e.preventDefault(); tmSave(); }
+    if (/^log(Km|Min|Sec|Mins)$/.test(e.target.id) && e.key === "Enter") { e.preventDefault(); e.target.blur(); }
   });
   document.addEventListener("pointerdown", unlockAudio, { passive: true });
   document.addEventListener("visibilitychange", () => {

@@ -24,3 +24,14 @@ Every run type (easy, intervals, long, race) has an **Outdoor / Treadmill** choi
 - At the end you're asked for the treadmill's distance (filled in with the estimate) and, optionally, its time.
 
 Saved data: no names changed. Treadmill runs add new fields only (`env: "treadmill"`, `tm`, and `kmh` on reps and blocks). Runs without `env` are outdoor runs and are never re-written.
+
+## Mark done (v2)
+
+For a run or strength session you did without the app. **Mark done** sits next to **Start** on today's sessions, beside each session not yet done on today or an earlier day in **This week** (as padel already had), and under the Start button on the Run and Strength screens ("Done it without the app? Mark done").
+
+- Runs: date, Outdoor / Treadmill, distance and time. The plan's distance and time are filled in to change; the average pace updates as you type.
+- Strength: date and how long it took. No weights are logged, so weight suggestions still come from your last session in the app.
+- The date starts as the day the session is planned for, or today if that's later. Future dates aren't allowed.
+- It ticks off the session, counts towards the week, and shows in Activities and Recent runs marked "Manual". Open it to see its numbers, copy a summary or delete it.
+
+Saved data: no names changed. Logged sessions are saved like ones done in the app, with one new field, `src: "manual"`; strength has no sets.
