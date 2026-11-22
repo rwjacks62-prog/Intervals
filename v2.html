@@ -518,6 +518,28 @@ label.btn:active { transform: translateY(1px); }
 .data-box .confirm { margin-bottom: 0; }
 .data-box .confirm .btn { width: 100%; }
 .data-count { font-weight: 700; }
+/* Treadmill (v2): the icon, the speed to set (large), and the treadmill's distance on the finish screen */
+.tm-icon { display: inline-block; width: 1.15em; height: 1.15em; vertical-align: -0.2em; margin-right: 0.3em; flex-shrink: 0; }
+.tm-tag { white-space: nowrap; }
+.seg button .tm-icon { margin-right: 0.35em; }
+.tm-speed { background: var(--panel); border-radius: 1rem; padding: 0.6rem 0.9rem 0.75rem; display: flex; flex-direction: column; gap: 0.15rem; transition: background-color 0.2s ease, color 0.2s ease; }
+.tm-speed .label { color: inherit; opacity: 0.8; }
+.tm-kmh { font-family: var(--font-display); font-weight: 900; font-size: 4.5rem; font-size: clamp(3.8rem, 21vw, 6rem); line-height: 0.85; letter-spacing: -0.01em; font-variant-numeric: tabular-nums; }
+.tm-kmh small { font-family: var(--font-ui); font-size: 1.1rem; font-weight: 700; letter-spacing: 0; margin-left: 0.4rem; }
+.tm-note { font-weight: 600; opacity: 0.85; font-variant-numeric: tabular-nums; }
+.tm-note:empty { display: none; }
+.tm-speed.is-new { background: var(--fg); color: var(--bg); }
+.tm-speed.is-soon { background: var(--fast); color: var(--chip-ink); }
+.count.tm { font-size: 4.5rem; font-size: clamp(3.6rem, 19vw, 5.5rem); }
+.run-title .tm-icon { margin-right: 0.35em; }
+.tm-enter .tm-fields { display: grid; grid-template-columns: 1fr 1fr; gap: 0.75rem; }
+.tm-in { display: flex; align-items: baseline; gap: 0.35rem; font-weight: 700; }
+.tm-in input { width: 100%; min-width: 0; padding: 0 0 0.1rem; border: 0; border-bottom: 3px solid var(--fg); border-radius: 0; background: transparent; color: var(--fg); font-family: var(--font-display); font-weight: 900; font-size: 2.4rem; line-height: 1; text-align: center; font-variant-numeric: tabular-nums; }
+.tm-in input::placeholder { color: var(--fg-soft); opacity: 0.55; }
+.tm-enter .btn { width: 100%; }
+.tm-enter .link-btn { align-self: center; }
+.link-btn.inline { min-height: 0; padding: 0 0.2rem; font-size: inherit; }
+@media (prefers-reduced-motion: reduce) { .tm-speed { transition: none; } }
 
 .gallery { display: grid; grid-template-columns: 1fr 1fr; gap: 0.5rem; padding: 1rem 0; overflow-y: auto; }
 .gallery div { border: 1px solid var(--line); border-radius: 0.5rem; padding: 0.25rem; font-size: 0.75rem; }
@@ -1358,6 +1380,82 @@ void main(){
     return WARMUP + p.reps * work + (p.reps - 1) * p.rest + COOLDOWN;
   }
 
+  // ---------------------------------------------------------------------
+  // Treadmill (v2). GPS can't measure pace indoors, so on the treadmill every pace becomes a speed in km/h, rounded to 0.1;
+  // the run is coached by time, and distance is estimated as speed × time. A pace range gives the speed in the middle of
+  // the range (easy 5:15–5:45/km = 10.4–11.4 km/h, aim for 10.9). Distance-based reps become a time at their speed
+  // (1 km at 15.0 km/h = 4:00). Recoveries between intervals are 8.0 km/h; strides are at interval speed.
+  // ---------------------------------------------------------------------
+  const TM_RECOVER = 8.0, TM_TIP = "Set the incline to 1% to match running outside.";
+  const kmh1 = (x) => Math.round(x * 10) / 10;
+  const fmtKmh = (v) => kmh1(v).toFixed(1);
+  // "4:40–4:50" in a description → [280, 290] (s/km, quicker first)
+  function paceRange(text) {
+    const m = /(\d+):(\d\d)\s*[–-]\s*(\d+):(\d\d)/.exec(String(text || ""));
+    return m ? [+m[1] * 60 + +m[2], +m[3] * 60 + +m[4]].sort((a, b) => a - b) : null;
+  }
+  // { kmh: speed to set, lo / hi: the range in km/h (null for a single pace), pace: s/km at that speed }
+  function tmSpeed(fast, slow, target) {
+    if (fast && slow) { const lo = 3600 / slow, hi = 3600 / fast, k = kmh1((lo + hi) / 2); return { kmh: k, lo: kmh1(lo), hi: kmh1(hi), pace: 3600 / k }; }
+    const k = kmh1(3600 / target);
+    return { kmh: k, lo: null, hi: null, pace: 3600 / k };
+  }
+  function tmSeg(sg) {
+    if (sg.lo && sg.hi) return tmSpeed(sg.lo, sg.hi);
+    const r = paceRange(sg.desc);
+    return r ? tmSpeed(r[0], r[1]) : tmSpeed(null, null, sg.target || sg.pace);
+  }
+  function tmZone(zone) { const z = ZONES[zone], r = paceRange(z.band); return r ? tmSpeed(r[0], r[1]) : tmSpeed(null, null, z.target); }
+  const tmEasy = () => tmSeg(SEG.easy), tmStride = () => tmZone("intervals");
+  const tmRecover = () => ({ kmh: TM_RECOVER, lo: null, hi: null, pace: 3600 / TM_RECOVER });
+  const tmSecs = (m, kmh) => m / 1000 / kmh * 3600; // seconds to run m metres at kmh
+  const tmRangeText = (s) => (s.lo != null ? fmtKmh(s.lo) + "–" + fmtKmh(s.hi) + " km/h" : "");
+  // An easy, long or race run on the treadmill as steps of steady speed from the start:
+  // { a, b: seconds from the start, d0: metres at a, kmh, seg: block index, stride: stride number from 0, or -1 }
+  function tmCont(plan) {
+    const steps = [], st = plan.strides, fast = tmStride().kmh;
+    let t = 0, d = 0, strideAt = null;
+    const add = (secs, kmh, seg, k) => { if (!(secs > 1e-6)) return; steps.push({ a: t, b: t + secs, d0: d, kmh: kmh, seg: seg, stride: k }); t += secs; d += secs * kmh / 3.6; };
+    plan.segs.forEach((s, i) => {
+      const sp = tmSeg(s).kmh, runTo = (to) => { if (to > d + 1e-6) add(tmSecs(to - d, sp), sp, i, -1); };
+      if (st && strideAt == null && st.from >= s.start && st.from < s.end) {
+        runTo(st.from); strideAt = t;
+        for (let k = 0; k < st.n && d < s.end - 1e-6; k++) {
+          add(Math.min(st.on, tmSecs(s.end - d, fast)), fast, i, k);
+          if (k < st.n - 1 && d < s.end - 1e-6) add(Math.min(st.off, tmSecs(s.end - d, sp)), sp, i, -1);
+        }
+      }
+      runTo(s.end);
+      d = s.end;
+    });
+    return { steps: steps, strideAt: strideAt, total: t };
+  }
+  // Interval sessions on the treadmill: every part runs on time. Each part gets its speed (ph.kmh) and its steps (ph.tms,
+  // seconds from the start of the part: the warm-up has its strides in it). Distance reps get the time they take at their speed.
+  function tmIntPhases(phases, p) {
+    const easy = tmEasy().kmh, fast = tmStride().kmh, work = tmZone(p.zone).kmh;
+    phases.forEach((ph) => {
+      ph.kmh = ph.type === "work" ? work : ph.type === "rest" ? TM_RECOVER : easy;
+      if (ph.type === "work" && ph.kind === "dist") ph.dur = tmSecs(ph.dist, work);
+      const steps = [];
+      if (ph.type === "warmup") {
+        let a = 0;
+        STRIDES.forEach((s, k) => { steps.push({ a: a, b: s, kmh: easy, stride: -1 }, { a: s, b: s + STRIDE_LEN, kmh: fast, stride: k }); a = s + STRIDE_LEN; });
+        steps.push({ a: a, b: ph.dur, kmh: easy, stride: -1 });
+      } else steps.push({ a: 0, b: ph.dur, kmh: ph.kmh, stride: -1 });
+      ph.tms = steps;
+    });
+    return phases;
+  }
+  const tmIntEst = (p) => tmIntPhases(iBuild(p), p).reduce((a, ph) => a + ph.dur, 0);
+  const tmIntDist = (p) => tmIntPhases(iBuild(p), p).reduce((a, ph) => a + ph.tms.reduce((x, s) => x + (s.b - s.a) * s.kmh / 3.6, 0), 0);
+  // "In 10 seconds, speed up to 15.0 for interval 2."
+  const tmWarn = (from, to, what) => "In 10 seconds, " + (to > from ? "speed up to " : "slow to ") + fmtKmh(to) + (what ? " " + what : "") + ".";
+  // Treadmill icon for the activity log, the finish screen and the run screen
+  const TM_ICON = '<svg class="tm-icon" viewBox="0 0 24 24" aria-hidden="true" focusable="false" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round">' +
+    '<path d="M2.5 19.5h15.5l3.5-2.5"/><path d="M17.5 17.2 15.6 6.5"/><path d="M13 6.5h5.5"/><circle cx="9.2" cy="4.6" r="1.7"/><path d="M8.6 8.2 6.6 12l3.3 1.2 1 3.6M8.6 8.2l3.2 2.5 2-.6M7.3 10.6l-2.6.4"/></svg>';
+  const isTm = (r) => !!(r && r.env === "treadmill");
+
   // Strength (programme approved 16 Nov 2026: two 30-minute sessions; see claude/strength-programme.md)
   // Each move: reps = bottom of the range, max = top. rir = reps to keep in reserve. Double progression: top of the range on every set, then +2 kg.
   // Moves from the earlier programme stay in EX (old: true) so sessions logged with them still show their names.
@@ -1875,7 +1973,7 @@ void main(){
   }
   // Which part of the workout starts now, and how its pace is judged on the map
   function rtSection(t) {
-    if (!R) return;
+    if (!R || R.tm) return; // treadmill (v2): no GPS, so no route
     if (!R.route) R.route = rtNew(R.startedAt);
     let s;
     if (R.mode === "int") {
@@ -2071,14 +2169,15 @@ void main(){
     return a;
   }
   const phaseSecs = (ph) => (ph.dur != null ? ph.dur : ph.est);
-  function iStart(w) {
-    const p = intervalPlan(w), t = Date.now();
-    R = { mode: "int", kind: "intervals", plan: p, w: w, title: iTitle(p), phases: iBuild(p), i: 0, phaseStart: t, startedAt: t, paused: false, pauseAt: 0,
+  function iStart(w, tm) {
+    const p = intervalPlan(w), t = Date.now(), phases = iBuild(p);
+    if (tm) tmIntPhases(phases, p); // treadmill (v2): every part on time, each with its speed
+    R = { mode: "int", kind: "intervals", plan: p, w: w, title: iTitle(p), phases: phases, i: 0, phaseStart: t, startedAt: t, paused: false, pauseAt: 0, tm: !!tm,
           fired: {}, reps: [], cur: null, totalDist: 0, done: false, lastCall: null, note: null,
           // turn round (v2): distance at the start of this phase, distance and time per kind of phase, the turn, warm-down run on to home
           phD0: 0, agg: {}, turn: null, homeExt: false, homeSaid: false, tickAt: 0 };
     rtSection(t);
-    say("Start workout. Warm up.", true);
+    say(tm ? "Start workout. Warm up: set the treadmill to " + fmtKmh(phases[0].kmh) + ". " + TM_TIP : "Start workout. Warm up.", true);
     beep(1320, 0.3, 0.3);
   }
   function iTick(t) {
@@ -2114,6 +2213,7 @@ void main(){
     if (run.done) return;
     const ph = R.phases[R.i], el = (t - R.phaseStart) / 1000, nx = R.phases[R.i + 1];
     const at = (key, sec, fn) => { if (el >= sec && !R.fired[key]) { R.fired[key] = true; if (el - sec < 4) fn(); } };
+    if (R.tm) { tmIntCues(ph, nx, at); tmFeedInt(t); return; }
     if (ph.type === "warmup") {
       STRIDES.forEach((s, k) => {
         at("s" + k, s, () => { say("Stride " + (k + 1) + " of 4. Go.", true); beep(1320, 0.2, 0.25); });
@@ -2141,6 +2241,7 @@ void main(){
   }
   function iFinishPhase(endT) {
     const ph = R.phases[R.i];
+    if (R.tm) tmFeedInt(endT);
     if (ph.type === "work") iCloseRep(endT);
     // distance and time of this phase, for the turn-round estimate
     const ag = R.agg[ph.type] || (R.agg[ph.type] = { d: 0, t: 0 });
@@ -2148,7 +2249,7 @@ void main(){
     R.i++;
     const late = Date.now() - endT > 5000;
     if (R.i >= R.phases.length) {
-      if (!late) { say(R.homeExt ? "You're home. End workout." : "End workout.", true); beep(660, 0.15, 0.25); setTimeout(() => beep(990, 0.4, 0.3), 180); }
+      if (!late) { say(R.homeExt ? "You're home. End workout." : R.tm ? "End workout. You can slow the treadmill down now." : "End workout.", true); beep(660, 0.15, 0.25); setTimeout(() => beep(990, 0.4, 0.3), 180); }
       finishRun(endT, true);
       return;
     }
@@ -2160,7 +2261,7 @@ void main(){
     const turnNow = !late && iTurnDue(endT);
     if (turnNow) iTurnMark(endT);
     if (!late) {
-      say(turnNow ? iTransition(ph, nx).replace(" Start ", " Halfway: turn round now. Start ") : iTransition(ph, nx), true);
+      say(R.tm ? tmTransition(ph, nx) : turnNow ? iTransition(ph, nx).replace(" Start ", " Halfway: turn round now. Start ") : iTransition(ph, nx), true);
       if (turnNow) midBeep(); else if (nx.type === "work") beep(1320, 0.35, 0.3); else beep(523, 0.3, 0.25);
     }
     if (ui.view === "run") renderRun();
@@ -2170,6 +2271,7 @@ void main(){
     rep.time = Math.max(0, (t - rep.start) / 1000);
     rep.pace = rep.dist >= 50 ? rep.time / (rep.dist / 1000) : null;
     R.reps.push({ n: rep.n, dist: Math.round(rep.dist), time: Math.round(rep.time), pace: rep.pace, splits: rep.splits.map((s) => Math.round(s.pace)), onTime: rep.onTime, skipped: rep.skipped });
+    if (R.tm) { const ph = R.phases.find((x) => x.type === "work" && x.n === rep.n); if (ph) R.reps[R.reps.length - 1].kmh = ph.kmh; } // treadmill (v2): new field
     R.cur = null;
   }
   function judgeTarget(target, pace) {
@@ -2229,7 +2331,7 @@ void main(){
     return { ph: out, total: x };
   }
   function iTurnDue(t) {
-    if (!R || R.mode !== "int" || R.turn || R.paused || !gpsHealthy(t)) return false;
+    if (!R || R.mode !== "int" || R.tm || R.turn || R.paused || !gpsHealthy(t)) return false;
     const ph = R.phases[R.i];
     if (ph.type === "work" || R.totalDist < 300) return false;
     const pr = iProject(t), half = pr.total / 2, cur = pr.ph[0], nx = pr.ph[1];
@@ -2259,12 +2361,73 @@ void main(){
     return { total: x, at: r.b, where: "at the start of " + name(next.q) };
   }
 
+  // ---------------------------------------------------------------------
+  // Intervals on the treadmill (v2): coached by time. Distance is the speed of each part × its time.
+  // ---------------------------------------------------------------------
+  // Metres covered s seconds into part ph
+  function tmPartDist(ph, s) {
+    let d = 0;
+    (ph.tms || []).forEach((x) => { if (s > x.a) d += (Math.min(s, x.b) - x.a) * x.kmh / 3.6; });
+    return d;
+  }
+  // Brings the estimated distance up to time t (the pause time, if paused)
+  function tmFeedInt(t) {
+    const ph = R.phases[R.i]; if (!ph) return;
+    const tt = R.paused ? Math.min(t, R.pauseAt) : t, s = Math.max(0, Math.min(ph.dur, (tt - R.phaseStart) / 1000)), d = tmPartDist(ph, s);
+    R.totalDist = R.phD0 + d;
+    if (ph.type === "work" && R.cur) R.cur.dist = d;
+  }
+  // The speed now and the next change in part ph, s seconds in: { kmh, since: s since the last change, next: { kmh, in, what } or null }
+  function tmIntNow(ph, s) {
+    const steps = ph.tms || [], k = Math.max(0, steps.findIndex((x) => s < x.b)), cur = steps[k] || steps[steps.length - 1];
+    let since = s - cur.a;
+    for (let j = k - 1; j >= 0 && steps[j].kmh === cur.kmh; j--) since = s - steps[j].a;
+    let next = null;
+    for (let j = k + 1; j < steps.length; j++) if (steps[j].kmh !== cur.kmh) { next = { kmh: steps[j].kmh, in: steps[j].a - s, what: steps[j].stride >= 0 ? "Stride " + (steps[j].stride + 1) + " of 4" : "Easy" }; break; }
+    const nx = R.phases[R.phases.indexOf(ph) + 1];
+    if (!next && nx && nx.tms[0].kmh !== cur.kmh) next = { kmh: nx.tms[0].kmh, in: ph.dur - s, what: nx.type === "work" ? "Interval " + nx.n : nx.type === "rest" ? "Recovery" : "Warm-down" };
+    return { kmh: cur.kmh, since: since, next: next, stride: cur.stride };
+  }
+  // Calls inside a part: 10 seconds before every speed change, the strides in the warm-up, and halfway through longer intervals
+  function tmIntCues(ph, nx, at) {
+    const steps = ph.tms || [];
+    steps.forEach((x, j) => {
+      if (j === 0) return;
+      const prev = steps[j - 1];
+      if (prev.kmh === x.kmh) return;
+      at("tw" + j, x.a - 10, () => say(tmWarn(prev.kmh, x.kmh, x.stride >= 0 ? "for stride " + (x.stride + 1) : ""), true));
+      [3, 2, 1].forEach((n) => at("tc" + j + "_" + n, x.a - n, () => beep(880, 0.1, 0.2)));
+      at("ts" + j, x.a, () => {
+        if (x.stride >= 0) { say("Stride " + (x.stride + 1) + " of 4: " + fmtKmh(x.kmh) + ". Go.", true); beep(1320, 0.2, 0.25); }
+        else say("Ease off: back to " + fmtKmh(x.kmh) + ".", true);
+      });
+    });
+    if (nx) {
+      const from = steps.length ? steps[steps.length - 1].kmh : ph.kmh, to = nx.tms[0].kmh;
+      if (from !== to) at("twe", ph.dur - 10, () => say(tmWarn(from, to, nx.type === "work" ? "for interval " + nx.n : nx.type === "rest" ? "for your recovery" : "for the warm-down"), true));
+      if (nx.type === "work") [3, 2, 1].forEach((k) => at("c" + k, ph.dur - k, () => { say(String(k), true); beep(880, 0.12, 0.25); }));
+      else if (from !== to) [3, 2, 1].forEach((k) => at("c" + k, ph.dur - k, () => beep(880, 0.1, 0.2)));
+    }
+    if (ph.type === "work" && ph.dur >= 120) at("hw", ph.dur / 2, () => say("Halfway through interval " + ph.n + ". Hold " + fmtKmh(ph.kmh) + "."));
+  }
+  // Said at each change: the speed to set, and for distance reps, the distance and the time it takes
+  function tmTransition(ph, nx) {
+    const set = (k) => (k === ph.kmh ? "keep the treadmill at " : "set the treadmill to ") + fmtKmh(k);
+    if (nx.type === "work") return (ph.type === "warmup" ? "End warm-up. " : "") + "Interval " + nx.n + (nx.n === R.plan.reps && nx.n > 1 ? ", the last one" : "") + ": " + set(nx.kmh) + ". " +
+      (nx.kind === "dist" ? spokenDist(nx.dist) + " takes " : "") + spokenGap(nx.dur * 1000) + ".";
+    if (nx.type === "rest") return "End interval " + ph.n + ". Recovery: " + set(nx.kmh) + " for " + spokenGap(nx.dur * 1000) + ".";
+    if (nx.type === "cool") return "End of intervals. Warm-down: " + set(nx.kmh) + " for " + spokenGap(nx.dur * 1000) + ".";
+    return "";
+  }
+
   // =====================================================================
   // Run engine: easy, long and race runs (continuous, set by distance)
   // =====================================================================
-  function cStart(plan) {
+  function cStart(plan, tm) {
     const t = Date.now();
     R = Object.assign({}, plan, {
+      // treadmill (v2): the run as steps of steady speed, and how far into it (s) the estimated distance has got
+      tm: !!tm, tmc: tm ? tmCont(plan) : null, tmEl: 0,
       mode: "cont", startedAt: t, runStart: t, paused: false, pauseAt: 0, totalDist: 0, done: false,
       segIdx: 0, segStartAt: t, kmNext: 1000, kmAt: t, kms: [], halfNext: null, halfAt: t, warned: {},
       blocks: [], lastCall: null, lastKm: null, lastQ: null, seq: 0, strideStart: null, fired: {}, note: null,
@@ -2275,7 +2438,13 @@ void main(){
     R.qFirst = true; // the first 250 m includes getting going, so it is only checked for running too fast
     const first = R.segs[0];
     let intro = "Start run. " + spokenDist(R.total) + ". ";
-    if (R.kind === "race") intro = "Race start. First kilometre at 4 oh 6 to 4 oh 8. Hold back.";
+    if (R.tm) {
+      const k = fmtKmh(tmSeg(first).kmh);
+      if (R.kind === "race") intro = "Race start. Set the treadmill to " + k + " for the first kilometre. Hold back.";
+      else if (R.segs.length === 1) intro += "Set the treadmill to " + k + ". That's about " + spokenGap(R.tmc.total * 1000) + ".";
+      else intro += "Set the treadmill to " + k + " for the first " + spokenDist(first.dist) + ".";
+      intro += " " + TM_TIP;
+    } else if (R.kind === "race") intro = "Race start. First kilometre at 4 oh 6 to 4 oh 8. Hold back.";
     else if (R.segs.length === 1) intro += "Easy pace, 5 15 to 5 45.";
     else intro += spokenDist(first.dist) + " easy to start.";
     say(intro, true);
@@ -2289,6 +2458,7 @@ void main(){
     qReset(sg.start, t, bad);
     if (!speak) return;
     let txt;
+    if (R.tm) { say(tmSegText(i)); return; }
     if (sg.key === "easy") txt = "Easy now: " + spokenDist(sg.dist) + ".";
     else if (sg.key === "steady") txt = "Steady now: " + spokenDist(sg.dist) + " at 4 40 to 4 50.";
     else if (sg.key === "build") txt = "Start building: " + spokenDist(sg.dist) + ", from 4 45 down to 4 20.";
@@ -2333,9 +2503,9 @@ void main(){
     return R.mid;
   }
   const midProj = (m) => (R.kind === "race" ? " Projected finish " + spokenTime(m.time * 2) + "." : "");
-  const midNums = (m) => spokenDist(m.at) + " in " + spokenTime(m.time) + ". Average " + spokenPace(m.avg) + "." + midProj(m);
+  const midNums = (m) => (R.tm ? "About " + spokenDist(m.at) + " in " + spokenGap(m.time * 1000) + "." : spokenDist(m.at) + " in " + spokenTime(m.time) + ". Average " + spokenPace(m.avg) + "." + midProj(m));
   // On screen: "4.25 km · 23:10 · 5:27/km" (race: "· proj. 41:00"); a narrow screen wraps only between the parts
-  const midMeta = (m) => [+(m.at / 1000).toFixed(2) + " km", fmtClock(m.time * 1000), fmtPace(m.avg) + "/km"].concat(R.kind === "race" ? ["proj. " + fmtClock(m.time * 2000)] : [])
+  const midMeta = (m) => (R.tm ? ["~" + (m.at / 1000).toFixed(2) + " km", fmtClock(m.time * 1000)] : [+(m.at / 1000).toFixed(2) + " km", fmtClock(m.time * 1000), fmtPace(m.avg) + "/km"].concat(R.kind === "race" ? ["proj. " + fmtClock(m.time * 2000)] : []))
     .map((x) => x.replace(/ /g, " ")).join(" · ");
   // A stride is on, or the next one starts within 12 s (50 m before the first): the halfway call waits
   function strideBusy(t, x) {
@@ -2376,10 +2546,11 @@ void main(){
       const sg = R.segs[R.segIdx], nx = R.segs[R.segIdx + 1];
       // next event by distance
       const cands = [];
-      if (R.halfNext != null && R.halfNext < sg.end) cands.push(["half", R.halfNext]);
-      if (sg.quarter && R.kind !== "race" && R.qNext < sg.end && R.qNext < R.total) cands.push(["q", R.qNext]);
+      // treadmill (v2): no pace checks (the pace is the speed you set) and no "in 200 metres" (the 10-second speed call does that)
+      if (!R.tm && R.halfNext != null && R.halfNext < sg.end) cands.push(["half", R.halfNext]);
+      if (!R.tm && sg.quarter && R.kind !== "race" && R.qNext < sg.end && R.qNext < R.total) cands.push(["q", R.qNext]);
       if (R.kmNext < R.total) cands.push(["km", R.kmNext]);
-      if (nx && nx.key !== "easy" && R.kind !== "race" && !R.warned[R.segIdx + 1] && nx.start - 200 > sg.start) cands.push(["warn", nx.start - 200]);
+      if (!R.tm && nx && nx.key !== "easy" && R.kind !== "race" && !R.warned[R.segIdx + 1] && nx.start - 200 > sg.start) cands.push(["warn", nx.start - 200]);
       cands.push([nx ? "seg" : "finish", sg.end]);
       // halfway on its own, unless a km, 250 m or race-pace check falls on the same spot (that call carries it)
       if (R.midAt != null && !R.midDone && !cands.some((c) => (c[0] === "km" || c[0] === "q" || c[0] === "half") && midHere(c[1]))) cands.push(["mid", R.midAt]);
@@ -2411,7 +2582,12 @@ void main(){
         let txt = "Kilometre " + k + ". Split " + spokenPace(split) + ". Average " + spokenPace(avg) + "." + cJudgeText(ksg, v);
         const left = R.total - pos;
         if (pos >= 0.75 * R.total && left > 0) txt += " " + spokenDist(left) + " to go.";
-        if (midHere(pos)) {
+        if (R.tm) {
+          // treadmill (v2): distance is an estimate, so no split or pace verdict; time in, distance left, a word of encouragement
+          txt = "About " + spokenDist(pos) + ". " + spokenGap((tc - R.runStart)) + " in." + (pos >= 0.75 * R.total && left > 0 ? " About " + spokenDist(left) + " to go." : "") + " " + TM_CHEER[(k - 1) % TM_CHEER.length];
+          if (midHere(pos)) { const m = midMark(pos, tc); midOut("Halfway. " + midNums(m) + " " + TM_CHEER[(k - 1) % TM_CHEER.length], fresh(tc), pos); }
+          else if (fresh(tc)) say(txt);
+        } else if (midHere(pos)) {
           const m = midMark(pos, tc);
           midOut("Halfway. Kilometre " + k + ". Split " + spokenPace(split) + "." + cJudgeText(ksg, v) + " " + spokenTime(m.time) + " in. Average " + spokenPace(m.avg) + "." + midProj(m), fresh(tc), pos);
         } else if (fresh(tc)) say(txt);
@@ -2427,7 +2603,8 @@ void main(){
         if (sg.key !== "easy") {
           const time = (tc - R.segStartAt) / 1000, pace = time / (sg.dist / 1000);
           R.blocks.push({ key: sg.key, label: sg.label, dist: sg.dist, time: Math.round(time), pace: pace });
-          if (fresh(tc) && R.kind !== "race") say(sg.label + " done: " + spokenPace(pace) + " average.");
+          if (R.tm) R.blocks[R.blocks.length - 1].kmh = tmSeg(sg).kmh; // treadmill (v2): new field
+          else if (fresh(tc) && R.kind !== "race") say(sg.label + " done: " + spokenPace(pace) + " average.");
         }
         cEnterSeg(R.segIdx + 1, tc, fresh(tc), bad);
         if (ui.view === "run") renderRun();
@@ -2436,13 +2613,15 @@ void main(){
         if (sg.key !== "easy") {
           const time = (tc - R.segStartAt) / 1000;
           R.blocks.push({ key: sg.key, label: sg.label, dist: sg.dist, time: Math.round(time), pace: time / (sg.dist / 1000) });
+          if (R.tm) R.blocks[R.blocks.length - 1].kmh = tmSeg(sg).kmh;
         }
         const rem = pos - (R.kmNext - 1000);
         if (rem >= 200) R.kms.push(Math.round((tc - R.kmAt) / 1000 / (rem / 1000)));
         R.totalDist = pos;
         const dur = (tc - R.runStart) / 1000;
         if (fresh(tc)) {
-          say((R.kind === "race" ? "Finish. " : "Run complete. ") + spokenDist(pos) + " in " + spokenTime(dur) + ". Average " + spokenPace(dur / (pos / 1000)) + ".", false);
+          say(R.tm ? (R.kind === "race" ? "Finish. " : "Run complete. ") + "About " + spokenDist(pos) + " in " + spokenGap(dur * 1000) + ". You can slow the treadmill down now, then enter its distance on your phone." :
+            (R.kind === "race" ? "Finish. " : "Run complete. ") + spokenDist(pos) + " in " + spokenTime(dur) + ". Average " + spokenPace(dur / (pos / 1000)) + ".", false);
           beep(660, 0.15, 0.25); setTimeout(() => beep(990, 0.4, 0.3), 180);
         }
         finishRun(tc, true);
@@ -2455,6 +2634,7 @@ void main(){
     if (!R.strides) return;
     const st = R.strides;
     if (R.strideStart == null) {
+      if (R.tm) return; // treadmill (v2): set from the run's timeline by tmFeedCont
       if (R.totalDist >= st.from) { R.strideStart = t; }
       else return;
     }
@@ -2462,9 +2642,89 @@ void main(){
     if (el < st.n * cyc) R.qVoid = true; // strides are meant to be quick: no 250 m pace checks until they're over
     for (let k = 0; k < st.n; k++) {
       const s0 = k * cyc;
-      if (el >= s0 && !R.fired["s" + k]) { R.fired["s" + k] = true; if (el - s0 < 4) { say("Stride " + (k + 1) + " of " + st.n + ". Go.", true); beep(1320, 0.2, 0.25); } }
-      if (el >= s0 + st.on && !R.fired["e" + k]) { R.fired["e" + k] = true; if (el - s0 - st.on < 4) say("Ease off.", true); }
+      if (el >= s0 && !R.fired["s" + k]) { R.fired["s" + k] = true; if (el - s0 < 4) { say("Stride " + (k + 1) + " of " + st.n + (R.tm ? ": " + fmtKmh(tmStride().kmh) : "") + ". Go.", true); beep(1320, 0.2, 0.25); } }
+      if (el >= s0 + st.on && !R.fired["e" + k]) { R.fired["e" + k] = true; if (el - s0 - st.on < 4) say(R.tm ? "Ease off: back to " + fmtKmh(tmSeg(R.segs[R.segIdx]).kmh) + "." : "Ease off.", true); }
     }
+  }
+
+  // ---------------------------------------------------------------------
+  // Easy, long and race runs on the treadmill (v2): coached by time. The estimated distance (speed × time) is fed into
+  // the same km, halfway, block and finish calls as outdoors, so those come at the same points.
+  // ---------------------------------------------------------------------
+  const TM_FOR = { easy: "for easy", steady: "for steady", build: "to build to threshold", race: "for race pace", hold: "to lock in", push: "for the last 3 kilometres" };
+  const TM_CHEER = ["Nice and steady.", "Relax your shoulders.", "Stay tall.", "Looking good.", "Smooth and light.", "Keep it going.", "Strong work.", "Nearly there. Hold it.", "Good rhythm.", "Lovely."];
+  // What's said at the start of block i: the speed to set, how far and how long
+  function tmSegText(i) {
+    const sg = R.segs[i], sp = tmSeg(sg).kmh, prev = R.segs[i - 1], same = prev && tmSeg(prev).kmh === sp;
+    const set = (same ? "keep the treadmill at " : "set the treadmill to ") + fmtKmh(sp), long = spokenDist(sg.dist) + ", about " + spokenGap(tmSecs(sg.dist, sp) * 1000) + ".";
+    if (sg.key === "push") return "Three to go. " + capFirst(set) + ", and push if you feel good.";
+    if (sg.key === "hold") return "Lock in: " + set + ". Run even.";
+    const name = { easy: "Easy now", steady: "Steady now", build: "Build to threshold", race: "Race pace now" }[sg.key] || sg.label;
+    return name + ": " + set + " for " + long;
+  }
+  const tmStepAt = (P, x) => P.steps.findIndex((s) => x < s.b - 1e-9);
+  function tmDistAt(P, x) {
+    const k = tmStepAt(P, x);
+    if (k < 0) return R.total;
+    const s = P.steps[k];
+    return Math.min(R.total, s.d0 + Math.max(0, x - s.a) * s.kmh / 3.6);
+  }
+  // Brings the estimated distance up to time t, one stretch of steady speed at a time, through cOnDistance
+  function tmFeedCont(t) {
+    const P = R.tmc, el = Math.max(0, (t - R.runStart) / 1000);
+    for (let g = 0; g < 200 && R && !R.done && R.tmEl < el - 1e-9; g++) {
+      const x = R.tmEl, k = tmStepAt(P, x), b = k < 0 ? el : Math.min(el, P.steps[k].b);
+      if (R.strides && R.strideStart == null && P.strideAt != null && x >= P.strideAt - 1e-6) R.strideStart = R.runStart + P.strideAt * 1000;
+      const d1 = k < 0 ? R.total : tmDistAt(P, b), d = d1 - R.totalDist;
+      R.tmEl = b;
+      if (d > 1e-9) cOnDistance(d, R.runStart + x * 1000, R.runStart + b * 1000, false);
+      if (!R || R.done) return;
+      if (k < 0) break;
+    }
+    if (R && R.strides && R.strideStart == null && P.strideAt != null && R.tmEl >= P.strideAt - 1e-6) R.strideStart = R.runStart + P.strideAt * 1000;
+  }
+  // 10 seconds before every speed change: what's next; beeps for the last 3 seconds
+  function tmContCues(t) {
+    const P = R.tmc, el = (t - R.runStart) / 1000;
+    const at = (key, sec, fn) => { if (el >= sec && !R.fired[key]) { R.fired[key] = true; if (el - sec < 4) fn(); } };
+    P.steps.forEach((x, k) => {
+      if (k === 0) return;
+      const prev = P.steps[k - 1];
+      if (prev.kmh === x.kmh) return;
+      const what = x.stride >= 0 ? "for stride " + (x.stride + 1) : x.seg !== prev.seg ? TM_FOR[R.segs[x.seg].key] || "" : "";
+      at("tw" + k, x.a - 10, () => say(tmWarn(prev.kmh, x.kmh, what), true));
+      [3, 2, 1].forEach((n) => at("tc" + k + "_" + n, x.a - n, () => beep(880, 0.1, 0.2)));
+    });
+  }
+  // The speed now and the next change: { kmh, since: s since the last change, next: { kmh, in, what } or null, segEnd: s when this block ends }
+  function tmContNow(el) {
+    const P = R.tmc, k0 = tmStepAt(P, el), k = k0 < 0 ? P.steps.length - 1 : k0, cur = P.steps[k];
+    let since = el - cur.a;
+    for (let j = k - 1; j >= 0 && P.steps[j].kmh === cur.kmh; j--) since = el - P.steps[j].a;
+    let next = null;
+    for (let j = k + 1; j < P.steps.length; j++) if (P.steps[j].kmh !== cur.kmh) {
+      const x = P.steps[j];
+      next = { kmh: x.kmh, in: x.a - el, what: x.stride >= 0 ? "Stride " + (x.stride + 1) + " of " + R.strides.n : R.segs[x.seg].label };
+      break;
+    }
+    let segEnd = P.total;
+    for (let j = k; j < P.steps.length; j++) { if (P.steps[j].seg !== cur.seg) break; segEnd = P.steps[j].b; }
+    let segStart = 0;
+    for (let j = k; j >= 0; j--) { if (P.steps[j].seg !== cur.seg) break; segStart = P.steps[j].a; }
+    return { kmh: cur.kmh, since: since, next: next, segEnd: segEnd, segStart: segStart, stride: cur.stride };
+  }
+
+  // The speeds a treadmill run used, for its record and Copy summary: [[label, km/h], …]
+  function tmSpeedsUsed() {
+    if (R.mode === "int") {
+      const work = R.phases.find((p) => p.type === "work"), out = [["Warm-up and warm-down", tmEasy().kmh], ["Strides", tmStride().kmh], ["Intervals", work.kmh]];
+      if (R.phases.some((p) => p.type === "rest")) out.push(["Recoveries", TM_RECOVER]);
+      return out;
+    }
+    const out = [];
+    R.segs.forEach((sg) => { if (!out.some((x) => x[0] === sg.label)) out.push([sg.label, tmSeg(sg).kmh]); });
+    if (R.strides) out.push(["Strides", tmStride().kmh]);
+    return out;
   }
 
   // =====================================================================
@@ -2472,13 +2732,13 @@ void main(){
   // =====================================================================
   function runStart() {
     unlockAudio();
-    const w = ui.rWeek || Math.min(planWeek(), 10), kind = ui.rKind || defaultRunKind();
+    const w = ui.rWeek || Math.min(planWeek(), 10), kind = ui.rKind || defaultRunKind(), tm = ui.rEnv === "treadmill";
     mapReset(); ui.lastRoute = null; ui.hl = null;
-    startGps();
+    if (tm) stopGps(); else startGps(); // treadmill (v2): no GPS
     gps.trail = [];
-    if (kind === "intervals") iStart(w);
-    else if (kind === "easy") cStart(easyPlan(w, ui.rVar || defaultEasyVar()));
-    else cStart(longPlan(w));
+    if (kind === "intervals") iStart(w, tm);
+    else if (kind === "easy") cStart(easyPlan(w, ui.rVar || defaultEasyVar()), tm);
+    else cStart(longPlan(w), tm);
     requestWake();
     ui.view = "run"; ui.confirmEnd = false;
     setLock(true);
@@ -2490,7 +2750,9 @@ void main(){
     if (!R || R.done) return;
     const t = Date.now();
     if (!R.paused) {
-      if (R.mode === "int") iTick(t); else { cTick(t); midFlush(t); }
+      if (R.mode === "int") iTick(t);
+      else if (R.tm) { tmFeedCont(t); if (R && !R.done) { cTick(t); tmContCues(t); midFlush(t); } }
+      else { cTick(t); midFlush(t); }
     }
     if (R && !R.done) paintRun(t);
   }
@@ -2514,6 +2776,7 @@ void main(){
     iFinishPhase(Date.now());
   }
   function finishRun(endT, complete) {
+    if (R.mode === "int" && R.tm) tmFeedInt(endT);
     if (R.mode === "int" && R.cur) iCloseRep(endT);
     R.done = true;
     clearInterval(rTicker); rTicker = null;
@@ -2532,11 +2795,17 @@ void main(){
       if (R.mid) rec.mid = { at: R.mid.at, t: Math.round(R.mid.time) }; // halfway: distance in m, time in s without pauses
       if (dist < 100) rec = null;
     }
+    // Treadmill (v2), as new fields only: env, and tm = { est: the estimated distance (m), app: the app's time (s),
+    // speeds: [label, km/h] used, ask: true until you enter the treadmill's distance }. Runs without env are outdoor runs.
+    if (rec && R.tm) {
+      rec.env = "treadmill";
+      rec.tm = { v: 1, est: rec.dist, app: rec.dur, speeds: tmSpeedsUsed(), ask: true };
+    }
     if (rec) { RS.history.push(rec); RS.history = RS.history.slice(-RUN_KEEP); saveRuns(); }
     let route = null;
     try { route = rtFinish(rec, endT); } catch (e) { route = null; }
     ui.lastRun = rec; ui.lastRoute = route; ui.hl = null; ui.view = rec ? "runDone" : "home"; ui.confirmEnd = false; ui.copyText = null;
-    ui.doneFrom = "finish"; ui.gpx = null; ui.gpxMsg = "";
+    ui.doneFrom = "finish"; ui.gpx = null; ui.gpxMsg = ""; ui.tmEdit = false;
     R = null;
     render();
   }
@@ -3093,7 +3362,8 @@ void main(){
                lastRun: null, lastLift: null, copyText: null, lastRoute: null, hl: null, doneFrom: null, gpx: null, gpxMsg: "",
                wkEdit: false, wkUndo: [], // Edit week is on; earlier arrangements for Undo (this visit only)
                liftFrom: null, lastPadel: null, homeTop: 0, delAsk: null, // strength opened from Activities; padel open; where Activities was scrolled to; which activity Delete is asking about
-               dataMsg: null, bkPend: null, bkFile: null }; // Your data: the last message, a backup file picked to restore (not yet confirmed), a backup to download
+               dataMsg: null, bkPend: null, bkFile: null, // Your data: the last message, a backup file picked to restore (not yet confirmed), a backup to download
+               rEnv: "outdoor", tmEdit: false }; // treadmill (v2): Outdoor or Treadmill on the Run screen; changing a treadmill run's distance
   // doneFrom (runs): "finish" just finished, "runs" from Recent runs on the Run screen, "acts" from Activities on home
   // Which finish screen is open, kept for this browser tab only (sessionStorage, not the saved runs), so if iPhone
   // reloads the page while a run's finish screen is open, it comes back. Ignored after 30 minutes.
@@ -3113,7 +3383,7 @@ void main(){
     if (route && (!Array.isArray(route.pts) || route.pts.length < 2)) route = null;
     if (MV.id !== id) mapReset();
     if (!R) stopGps();
-    ui.lastRun = r; ui.lastRoute = route; ui.hl = null; ui.copyText = null; ui.gpx = null; ui.gpxMsg = ""; ui.delAsk = null;
+    ui.lastRun = r; ui.lastRoute = route; ui.hl = null; ui.copyText = null; ui.gpx = null; ui.gpxMsg = ""; ui.delAsk = null; ui.tmEdit = false;
     ui.doneFrom = from || "runs"; ui.view = "runDone"; ui.confirmEnd = false;
     render();
     const v = app.querySelector(".view"); if (v) v.scrollTop = 0;
@@ -3121,7 +3391,7 @@ void main(){
   }
   function backToRuns() {
     ui.view = "runSetup"; ui.lastRun = null; ui.lastRoute = null; ui.hl = null; ui.copyText = null; ui.gpx = null; ui.gpxMsg = ""; ui.doneFrom = null;
-    mapReset(); startGps(); render();
+    mapReset(); if (ui.rEnv !== "treadmill") startGps(); render();
     const t = $("rHistTitle"); if (t && t.scrollIntoView) t.scrollIntoView({ block: "start" });
   }
   function render() {
@@ -3169,8 +3439,8 @@ void main(){
   }
   function allActs() {
     const out = [];
-    RS.history.forEach((r) => { const avg = runAvg(r); out.push({ k: "run", id: r.date, date: r.date, w: okWeek(r.w, r.date), dist: r.dist || 0, title: r.title || "Run",
-      sub: [dayText(r.date), "Run", r.dist != null ? fmtDist(r.dist) : "", r.dur != null ? fmtClock(r.dur * 1000) : "", avg ? fmtPace(avg) + "/km" : ""] }); });
+    RS.history.forEach((r) => { const avg = runAvg(r), tm = isTm(r), est = tm && r.tm && r.tm.ask ? "~" : ""; out.push({ k: "run", id: r.date, date: r.date, w: okWeek(r.w, r.date), dist: r.dist || 0, title: r.title || "Run", tm: tm,
+      sub: [dayText(r.date), tm ? "Treadmill" : "Outdoor", r.dist != null ? est + fmtDist(r.dist) : "", r.dur != null ? fmtClock(r.dur * 1000) : "", avg ? est + fmtPace(avg) + "/km" : ""] }); });
     S.sessions.forEach((x) => out.push({ k: "lift", id: liftKey(x), date: x.date || "", w: okWeek(x.week, x.date), title: sessName(x),
       sub: [dayText(x.date), "Strength", x.durationSec != null ? Math.max(1, Math.round(x.durationSec / 60)) + " min" : ""] }));
     PD.items.forEach((p) => out.push({ k: "padel", id: p.id, date: p.date, w: p.w, title: "Padel", sub: [dayText(p.date), "Padel"] }));
@@ -3203,7 +3473,7 @@ void main(){
       h += '<ul class="run-list">';
       g.acts.forEach((a) => {
         h += '<li><button type="button" class="run-row" data-act="open-act" data-k="' + a.k + '" data-id="' + esc(a.id) + '"><span class="rr-main"><span class="rr-title">' + esc(a.title) + "</span>" +
-          '<span class="rr-sub">' + esc(a.sub.filter(Boolean).join(" · ")) + '</span></span><span class="rr-pace" aria-hidden="true">›</span></button></li>';
+          '<span class="rr-sub">' + a.sub.filter(Boolean).map((x, i) => (a.tm && x === "Treadmill" ? '<span class="tm-tag">' + TM_ICON + "Treadmill</span>" : esc(x))).join(" · ") + '</span></span><span class="rr-pace" aria-hidden="true">›</span></button></li>';
       });
       h += "</ul></div>";
     });
@@ -3320,13 +3590,16 @@ void main(){
   }
   function renderRunSetup() {
     document.body.setAttribute("data-phase", "idle");
-    const { kind, w, p } = runPlanFor(), tol = RS.tol, gs = gpsSummary(), wk = Math.min(planWeek(), 10), pre = beforePlan();
+    const { kind, w, p } = runPlanFor(), tol = RS.tol, gs = gpsSummary(), wk = Math.min(planWeek(), 10), pre = beforePlan(), tm = ui.rEnv === "treadmill";
     let opts = "";
     for (let i = 1; i <= 10; i++) opts += '<option value="' + i + '"' + (i === w ? " selected" : "") + ">Week " + i + (isLight(i) ? " · lighter" : i === 10 ? " · race" : "") + (i === wk && !pre ? " (now)" : "") + "</option>";
     let h = '<section class="view scroll" aria-labelledby="runTitle">' + backLink();
     h += '<header><p class="label">Sub-41 plan · Week ' + w + '</p><h1 class="title" id="runTitle">Run</h1></header>';
     h += '<div class="seg" role="group" aria-label="Run type">' +
       [["easy", "Easy"], ["intervals", "Intervals"], ["long", w === 10 ? "Race" : "Long"]].map(([k, l]) => '<button type="button" data-act="rkind" data-k="' + k + '" aria-pressed="' + (kind === k) + '">' + l + "</button>").join("") + "</div>";
+    // Where (v2): Outdoor (the default) or Treadmill, for every run type
+    h += '<div class="field"><span class="label" id="envLbl">Where</span><div class="seg" role="group" aria-labelledby="envLbl">' +
+      [["outdoor", "Outdoor"], ["treadmill", "Treadmill"]].map(([e, l]) => '<button type="button" data-act="renv" data-e="' + e + '" aria-pressed="' + ((tm ? "treadmill" : "outdoor") === e) + '">' + (e === "treadmill" ? TM_ICON : "") + l + "</button>").join("") + "</div></div>";
     h += '<div class="fields"><div class="field"><label class="label" for="rWeekSel">Plan week</label><div class="select-wrap"><select id="rWeekSel">' + opts + "</select></div></div>";
     if (kind === "easy") {
       // One button per easy run, named by its day in your week; if both are on the same day, "Easy" and "Strides"
@@ -3337,7 +3610,8 @@ void main(){
     }
     h += "</div>";
     h += '<div class="session">';
-    if (kind === "intervals") {
+    if (tm) h += tmSetupHtml(kind, p);
+    else if (kind === "intervals") {
       const z = ZONES[p.zone];
       h += '<h2 class="session-name">' + esc(p.reps + " × " + fmtWork(p)) + '</h2><p class="session-sub">At ' + esc(z.name) + " (" + z.band + "/km), " +
         (p.rest >= 120 && p.rest % 60 === 0 ? p.rest / 60 + " min" : p.rest + " s") + " jog between. Pace call every 250 m: on pace means " + fmtPace(z.target - tol) + "–" + fmtPace(z.target + tol) + "/km.</p>";
@@ -3360,17 +3634,47 @@ void main(){
       h += '<p class="total">About ' + Math.round(contEst(p) / 60) + " minutes at the target paces.</p>";
     }
     h += "</div>";
-    h += '<div class="panel"><div class="panel-row"><div><p class="status" id="gpsStatus"><span class="dot ' + gs.cls + '"></span>' + esc(gs.text) + '</p><p class="status-note" id="gpsNote">' + esc(gs.note) +
+    if (tm) h += '<div class="panel"><p class="status">' + TM_ICON + "Before you start</p><p class=\"status-note\">" + esc(TM_TIP) + " Start the belt at the first speed when you tap Start. No GPS is used indoors.</p></div>";
+    else h += '<div class="panel"><div class="panel-row"><div><p class="status" id="gpsStatus"><span class="dot ' + gs.cls + '"></span>' + esc(gs.text) + '</p><p class="status-note" id="gpsNote">' + esc(gs.note) +
       '</p></div><button type="button" class="btn small" id="gpsBtn" data-act="gps"' + (gps.state !== "off" && gps.state !== "denied" ? " hidden" : "") + ">Check GPS</button></div></div>";
     h += '<div class="panel"><div class="panel-row"><div><p class="status">Voice cues</p><p class="status-note">Through your headphones or the phone speaker. Test the volume before you go.</p></div>' +
       '<button type="button" class="btn small" data-act="test-voice-run">Test voice</button></div></div>';
-    if (kind !== "easy") h += '<div class="field"><span class="label" id="tolLbl">On-pace window</span><div class="seg" role="group" aria-labelledby="tolLbl">' +
+    if (kind !== "easy" && !tm) h += '<div class="field"><span class="label" id="tolLbl">On-pace window</span><div class="seg" role="group" aria-labelledby="tolLbl">' +
       [3, 5, 8].map((v) => '<button type="button" data-act="tol" data-tol="' + v + '" aria-pressed="' + (tol === v) + '">±' + v + " s/km</button>").join("") + "</div></div>";
     h += runHistoryHtml();
     h += '<p class="fine">Keep this page open with the screen on for the whole run. If the screen locks, the timer, voice and GPS stop.</p>';
     h += '<div class="sticky-bar">' + (wakeWontWork() ? '<p class="banner" role="status"><span class="dot warn"></span>' + esc(WAKE_WARN) + "</p>" : "") +
-      '<button type="button" class="btn primary wide" data-act="run-start">Start ' + (kind === "intervals" ? "intervals" : kind === "easy" ? "easy run" : p.kind === "race" ? "race" : "long run") + "</button></div></section>";
+      '<button type="button" class="btn primary wide" data-act="run-start">Start ' + (tm ? "treadmill " : "") + (kind === "intervals" ? "intervals" : kind === "easy" ? "easy run" : p.kind === "race" ? "race" : "long run") + "</button></div></section>";
     app.innerHTML = h;
+  }
+  // The treadmill version of the session card (v2): each part's speed in km/h, its range, and its time at that speed
+  function tmSetupHtml(kind, p) {
+    let h = "";
+    const row = (what, sub, how) => '<li><span class="what">' + what + "<span>" + sub + '</span></span><span class="how">' + how + "</span></li>";
+    const kmhRange = (sp) => fmtKmh(sp.kmh) + " km/h" + (sp.lo != null ? " (" + tmRangeText(sp) + ")" : "");
+    if (kind === "intervals") {
+      const z = ZONES[p.zone], sp = tmZone(p.zone), easy = tmEasy(), fast = tmStride(), rest = p.rest >= 120 && p.rest % 60 === 0 ? p.rest / 60 + " min" : p.rest + " s";
+      const work = p.kind === "dist" ? tmSecs(p.work, sp.kmh) : p.work;
+      h += '<h2 class="session-name">' + esc(p.reps + " × " + fmtWork(p)) + '</h2><p class="session-sub">At ' + esc(z.name) + ": set the treadmill to <strong>" + fmtKmh(sp.kmh) + " km/h</strong>" +
+        (sp.lo != null ? " (" + tmRangeText(sp) + ", the same as " + z.band + "/km)" : "") + ", with " + rest + " at " + fmtKmh(TM_RECOVER) + " km/h between. Coached by time: you're told each speed as it starts, with a call 10 seconds before every change.</p>";
+      h += '<ol class="steps">' +
+        row("Warm-up", "Easy at " + esc(kmhRange(easy)) + ", with 4 × 20 s strides at " + fmtKmh(fast.kmh) + " km/h from 8 min", "12 min") +
+        row(p.reps + " intervals of " + esc(fmtWork(p)), (p.kind === "dist" ? esc(fmtWork(p)) + " at " + fmtKmh(sp.kmh) + " km/h takes " + fmtClock(work * 1000) + ", so each ends on time" : "At " + fmtKmh(sp.kmh) + " km/h, about " + fmtDist(work * sp.kmh / 3.6) + " each"), fmtKmh(sp.kmh) + " km/h") +
+        row("Recovery", "Easy jog between intervals", rest + " at " + fmtKmh(TM_RECOVER) + " km/h") +
+        row("Warm-down", "Easy at " + fmtKmh(easy.kmh) + " km/h", "8 min") + "</ol>";
+      h += '<p class="total">About ' + Math.round(tmIntEst(p) / 60) + " minutes and ~" + fmtKm(tmIntDist(p)) + " in total.</p>";
+    } else {
+      const P = tmCont(p);
+      h += '<h2 class="session-name">' + esc(p.title) + "</h2>";
+      h += '<p class="session-sub">Coached by time: you\'re told each speed to set as it starts, with a call 10 seconds before every change. A call every km and at halfway, from the distance worked out as speed × time.' +
+        (p.kind === "race" ? " Goal 40:45." : "") + "</p>";
+      h += '<ol class="steps">';
+      p.segs.forEach((sg) => { const sp = tmSeg(sg); h += row(esc(sg.label), esc(kmhRange(sp)) + ", " + fmtPace(sp.pace) + "/km", fmtKm(sg.dist) + " · " + fmtClock(tmSecs(sg.dist, sp.kmh) * 1000)); });
+      if (p.strides) h += row("Strides", p.strides.n + " × 20 s at " + fmtKmh(tmStride().kmh) + " km/h, 40 s back at " + fmtKmh(tmSeg(p.segs[p.segs.length - 1]).kmh) + " between", "from " + fmtKm(p.strides.from));
+      h += "</ol>";
+      h += '<p class="total">About ' + Math.round(P.total / 60) + " minutes at these speeds.</p>";
+    }
+    return h;
   }
   function runHistoryHtml() {
     const hs = RS.history.slice().reverse().slice(0, 10);
@@ -3382,15 +3686,17 @@ void main(){
       const kind = runKind(r);
       let avg = r.avg;
       if (kind === "intervals") { let t = 0, d = 0; (r.reps || []).forEach((x) => { if (x.dist >= 50) { t += x.time; d += x.dist; } }); avg = d ? t / (d / 1000) : null; }
-      const sub = [r.dist != null ? fmtDist(r.dist) : "", r.dur != null ? fmtClock(r.dur * 1000) : "", withMap.has(r.date) ? "map" : ""].filter(Boolean).join(" · ");
+      const est = isTm(r) && r.tm && r.tm.ask ? "~" : "";
+      const sub = [isTm(r) ? '<span class="tm-tag">' + TM_ICON + "Treadmill</span>" : "Outdoor"].concat([r.dist != null ? est + fmtDist(r.dist) : "", r.dur != null ? fmtClock(r.dur * 1000) : "", withMap.has(r.date) ? "map" : ""].filter(Boolean).map(esc)).join(" · ");
       h += '<li><button type="button" class="run-row" data-act="open-run" data-id="' + esc(r.date) + '"><span class="rr-main"><span class="rr-title">' + esc(fmtDay(r.date)) + " · " + esc(r.title || "Run") + '</span>' +
-        (sub ? '<span class="rr-sub">' + esc(sub) + "</span>" : "") + '</span><span class="rr-pace">' + (avg ? fmtPace(avg) + "/km" : "–") + ' ›</span></button></li>';
+        (sub ? '<span class="rr-sub">' + sub + "</span>" : "") + '</span><span class="rr-pace">' + (avg ? (isTm(r) && r.tm && r.tm.ask ? "~" : "") + fmtPace(avg) + "/km" : "–") + ' ›</span></button></li>';
     });
     return h + "</ul></section>";
   }
 
   // ----- Live run -----
   function renderRun() {
+    if (R.tm) return renderTmRun();
     if (R.mode === "int") return renderIntervals();
     const sg = R.segs[R.segIdx], nx = R.segs[R.segIdx + 1];
     document.body.setAttribute("data-phase", sg.phase === "work" ? "work" : "idle");
@@ -3459,8 +3765,121 @@ void main(){
     app.innerHTML = h;
     paintRun(Date.now());
   }
+  // ----- Live run on the treadmill (v2): the speed to set, large; time left in this part; estimated distance (~) -----
+  function renderTmRun() {
+    const int = R.mode === "int", ph = int ? R.phases[R.i] : null, sg = int ? null : R.segs[R.segIdx];
+    document.body.setAttribute("data-phase", int ? (ph.type === "work" ? "work" : ph.type === "rest" ? "rest" : "idle") : sg.phase === "work" ? "work" : "idle");
+    document.body.classList.toggle("is-paused", R.paused);
+    let segs, title, name;
+    if (int) {
+      const total = R.phases.reduce((a, q) => a + q.dur, 0);
+      segs = R.phases.map((q, k) => '<span class="' + (q.type === "work" ? "w " : "") + (k < R.i ? "done" : k === R.i ? "now" : "") + '" style="flex:' + (q.dur / total).toFixed(4) + '"></span>').join("");
+      title = R.plan.reps + " × " + fmtWork(R.plan); name = phaseTitle(ph);
+    } else {
+      segs = R.segs.map((q, k) => '<span class="' + (q.phase === "work" ? "w " : "") + (k < R.segIdx ? "done" : k === R.segIdx ? "now" : "") + '" style="flex:' + (q.dist / R.total).toFixed(4) + '"></span>').join("");
+      const same = R.segs.filter((q) => q.key === sg.key);
+      title = R.title; name = sg.label + (same.length > 1 && sg.key !== "easy" ? " " + R.segs.filter((q, i) => q.key === sg.key && i <= R.segIdx).length + " of " + same.length : "");
+    }
+    let h = '<section class="view run" aria-label="Treadmill run"><header class="run-top"><span class="run-title">' + TM_ICON + "Week " + R.w + " · " + esc(title) + '</span><span class="meta" id="totalClock"></span></header>';
+    h += '<div class="segs" aria-hidden="true">' + segs + '</div><p class="banner" id="banner" hidden></p>';
+    h += '<div class="stage"><div class="stage-inner"><h1 class="phase-name">' + esc(name) + '</h1><p class="phase-sub" id="phaseSub"></p>';
+    h += '<div class="tm-speed" id="tmBox" role="status"><span class="label" id="tmLbl">Treadmill speed</span><span class="tm-kmh"><span id="tmKmh">–</span><small>km/h</small></span><span class="tm-note" id="tmNote"></span></div>';
+    h += '<div class="count tm" id="big" aria-hidden="true"></div><div class="bar" aria-hidden="true"><div id="barFill"></div></div><p class="detail" id="detail"></p>';
+    h += '<div class="pace-row"><div class="pace-box"><span class="label">Distance</span><span class="pace-val" id="tmDist">~0 m</span></div>' +
+      '<div class="pace-box"><span class="label" id="tmNextLbl">Next change</span><span class="pace-val" id="tmNext">–</span></div></div>';
+    if (!int) h += '<div class="call" id="call" hidden><span class="call-word" id="callWord"></span><span class="call-meta" id="callMeta"></span></div>';
+    h += '<p class="next">' + tmNextText() + "</p></div></div>";
+    h += runControls(int) + "</section>";
+    app.innerHTML = h;
+    paintRun(Date.now());
+  }
+  // "Next: steady · 2 km at 12.6 km/h, 9:31"
+  function tmNextText() {
+    if (R.mode === "int") {
+      const nx = R.phases[R.i + 1];
+      if (!nx) return "Then you're done.";
+      if (nx.type === "work") return "Next: interval " + nx.n + " <span>· " + (nx.kind === "dist" ? esc(fmtDist(nx.dist)) + " at " + fmtKmh(nx.kmh) + " km/h, " + fmtClock(nx.dur * 1000) : fmtClock(nx.dur * 1000) + " at " + fmtKmh(nx.kmh) + " km/h") + "</span>";
+      if (nx.type === "rest") return "Then recovery " + nx.n + " <span>· " + fmtClock(nx.dur * 1000) + " at " + fmtKmh(nx.kmh) + " km/h</span>";
+      return "Then warm-down <span>· 8 min at " + fmtKmh(nx.kmh) + " km/h</span>";
+    }
+    const nx = R.segs[R.segIdx + 1];
+    if (nx) { const sp = tmSeg(nx); return "Next: " + esc(nx.label.toLowerCase()) + " <span>· " + fmtKm(nx.dist) + " at " + fmtKmh(sp.kmh) + " km/h, " + fmtClock(tmSecs(nx.dist, sp.kmh) * 1000) + "</span>"; }
+    return R.segs.length === 1 ? (R.strides ? "Same speed all the way, apart from the strides" : "Same speed all the way") : "Last stretch to the finish";
+  }
+  function paintTm(t) {
+    const tt = R.paused ? R.pauseAt : t, int = R.mode === "int";
+    let now, left, frac, bigHtml, subText = "", detText = "", partLeftM = null;
+    if (int) {
+      const ph = R.phases[R.i], s = Math.max(0, Math.min(ph.dur, (tt - R.phaseStart) / 1000));
+      now = tmIntNow(ph, s); left = ph.dur - s; frac = s / ph.dur;
+      if (ph.type === "work") {
+        subText = (ph.kind === "dist" ? fmtDist(ph.dist) + " at " + fmtKmh(ph.kmh) + " km/h = " + fmtClock(ph.dur * 1000) : fmtClock(ph.dur * 1000) + " at " + fmtKmh(ph.kmh) + " km/h");
+        detText = "~" + fmtDist(R.cur ? R.cur.dist : 0) + (ph.kind === "dist" ? " of " + fmtDist(ph.dist) : " so far");
+      } else if (ph.type === "warmup") {
+        const k = STRIDES.findIndex((x) => s < x + STRIDE_LEN);
+        if (k === -1) subText = "Easy. Interval 1 is next.";
+        else if (s >= STRIDES[k]) subText = "Stride " + (k + 1) + " of 4: back to " + fmtKmh(ph.kmh) + " in " + Math.ceil(STRIDES[k] + STRIDE_LEN - s) + " s";
+        else subText = (k === 0 ? "Easy running. Strides start in " : "Easy. Stride " + (k + 1) + " in ") + fmtClock((STRIDES[k] - s) * 1000);
+        detText = "~" + fmtDist(R.totalDist) + " so far";
+      } else if (ph.type === "rest") {
+        subText = "Recovery jog";
+        const last = R.reps[R.reps.length - 1];
+        detText = last ? "Interval " + last.n + ": ~" + fmtDist(last.dist) + " in " + fmtClock(last.time * 1000) : "";
+      } else { subText = "Easy jog to finish"; detText = "~" + fmtDist(R.totalDist) + " so far"; }
+    } else {
+      const el = Math.max(0, (tt - R.runStart) / 1000), sg = R.segs[R.segIdx];
+      now = tmContNow(el); left = Math.max(0, now.segEnd - el); frac = (el - now.segStart) / Math.max(1, now.segEnd - now.segStart);
+      const sp = tmSeg(sg);
+      subText = capFirst(sg.desc) + " outdoors";
+      if (R.strides && R.strideStart != null) {
+        const x = (tt - R.strideStart) / 1000, cyc = R.strides.on + R.strides.off, k = Math.floor(x / cyc);
+        if (k < R.strides.n) {
+          const inS = x - k * cyc;
+          subText = inS < R.strides.on ? "Stride " + (k + 1) + " of " + R.strides.n + ": back to " + fmtKmh(sp.kmh) + " in " + Math.ceil(R.strides.on - inS) + " s" : "Easy. Stride " + (k + 2 <= R.strides.n ? k + 2 : "") + " in " + Math.ceil(cyc - inS) + " s";
+          if (k + 1 >= R.strides.n && inS >= R.strides.on) subText = "Strides done. Easy to the finish.";
+        }
+      } else if (R.strides) subText += " · strides from ~" + fmtKm(R.strides.from);
+      partLeftM = Math.max(0, sg.end - R.totalDist);
+      detText = "~" + (R.totalDist / 1000).toFixed(2) + " of " + fmtKm(R.total) + (R.segs.length > 1 ? " · ~" + fmtDist(partLeftM) + " left of this block" : " · ~" + fmtDist(Math.max(0, R.total - R.totalDist)) + " to go");
+    }
+    bigHtml = fmtClock(left * 1000) + "<small>left</small>";
+    if (R.paused) subText = "Paused. Stop the belt if you need to.";
+    const $s = (id, v, html) => { const e = $(id); if (!e) return; if (html) { if (e.innerHTML !== v) e.innerHTML = v; } else if (e.textContent !== v) e.textContent = v; };
+    const tc = $("totalClock"); if (tc) tc.textContent = fmtClock(tt - (int ? R.startedAt : R.runStart));
+    $s("big", bigHtml, true); $s("phaseSub", subText); $s("detail", detText);
+    const fill = $("barFill"); if (fill) fill.style.transform = "scaleX(" + Math.min(1, Math.max(0, frac)).toFixed(4) + ")";
+    // The speed box: "Set the treadmill to" for the first 10 s after a change, "In 8 s, speed up to" for the 10 s before one
+    const box = $("tmBox");
+    if (box) {
+      const soon = now.next && now.next.in <= 10.5 && !R.paused, fresh = !soon && now.since < 10;
+      box.className = "tm-speed" + (soon ? " is-soon" : fresh ? " is-new" : "");
+      $s("tmLbl", soon ? "In " + Math.max(1, Math.ceil(now.next.in)) + " s, " + (now.next.kmh > now.kmh ? "speed up to" : "slow to") : fresh ? "Set the treadmill to" : "Treadmill speed");
+      $s("tmKmh", fmtKmh(soon ? now.next.kmh : now.kmh));
+      let note = "";
+      if (soon) note = now.next.what;
+      else if (int) { const ph = R.phases[R.i]; note = now.stride >= 0 ? "Stride" : ph.type === "work" ? fmtPace(3600 / ph.kmh) + "/km" : ph.type === "rest" ? "Recovery jog" : "Easy, " + tmRangeText(tmEasy()); }
+      else { const sp = tmSeg(R.segs[R.segIdx]); note = now.stride >= 0 ? "Stride" : sp.lo != null ? tmRangeText(sp) : fmtPace(sp.pace) + "/km"; }
+      $s("tmNote", note);
+    }
+    $s("tmDist", "~" + fmtDist(R.totalDist));
+    if (now.next) { $s("tmNextLbl", "Next: " + fmtKmh(now.next.kmh) + " km/h"); $s("tmNext", "in " + fmtClock(now.next.in * 1000)); }
+    else { $s("tmNextLbl", "Pace at " + fmtKmh(now.kmh)); $s("tmNext", fmtPace(3600 / now.kmh) + "/km"); }
+    // Easy, long and race runs: the last km call or the halfway call
+    const call = $("call");
+    if (call) {
+      let word = null, meta = "";
+      if (R.midShow && (!R.lastKm || R.midShow.seq > R.lastKm.seq)) { word = "Halfway"; meta = midMeta(R.midShow.m); }
+      else if (R.lastKm) { word = "~" + R.lastKm.k + " km"; meta = fmtClock(R.kms.slice(0, R.lastKm.k).reduce((a, x) => a + x, 0) * 1000) + " in"; }
+      call.hidden = !word;
+      if (word) { call.className = "call " + (word === "Halfway" ? "mid" : "on"); $("callWord").textContent = word; $("callMeta").textContent = meta; }
+    }
+    const gl = $("gpsLine"); if (gl) gl.textContent = "Treadmill · distance is speed × time";
+    const bn = $("banner");
+    if (bn) { const msg = (R.note && t < R.noteUntil ? R.note : "") || (wakeAtRisk() ? WAKE_MSG : ""); bn.hidden = !msg; if (bn.textContent !== msg) bn.textContent = msg; }
+  }
   function paintRun(t) {
     if (!R || R.done || ui.view !== "run") return;
+    if (R.tm) { paintTm(t); return; }
     const tt = R.paused ? R.pauseAt : t;
     const big = $("big"), sub = $("phaseSub"), det = $("detail"), fill = $("barFill"), tc = $("totalClock");
     let bigHtml = "", subText = "", detText = "", frac = 0;
@@ -3574,7 +3993,8 @@ void main(){
     return s;
   }
   function runSummaryText(r) {
-    const lines = ["Sub-41 " + (runKind(r) === "intervals" ? "intervals" : runKind(r) + " run") + ": week " + r.w + ", " + r.title + ", " + fmtDay(r.date)];
+    const lines = ["Sub-41 " + (runKind(r) === "intervals" ? "intervals" : runKind(r) + " run") + " (" + (isTm(r) ? "Treadmill" : "Outdoor") + "): week " + r.w + ", " + r.title + ", " + fmtDay(r.date)];
+    if (isTm(r)) return tmSummaryLines(r, lines).join("\n");
     if (runKind(r) === "intervals") {
       lines.push("Total " + fmtClock(r.dur * 1000) + ", " + fmtDist(r.dist));
       if (r.turn) lines.push("Turned round at " + fmtDist(r.turn.d) + ", " + fmtClock(r.turn.t * 1000));
@@ -3587,6 +4007,87 @@ void main(){
     }
     return lines.join("\n");
   }
+  // Outdoor or Treadmill (v2). A run saved without the setting is an outdoor run.
+  const envHtml = (r) => (isTm(r) ? '<span class="tm-tag">' + TM_ICON + "Treadmill</span>" : "Outdoor");
+  // The treadmill's distance (v2): asked for on the finish screen, filled in with the app's estimate first. Saving
+  // keeps whatever you enter (and the time, if you enter one). Until then the run is saved with the estimate.
+  function tmEnterHtml(r) {
+    const t = r.tm || {};
+    if (!t.ask && !ui.tmEdit) {
+      return '<p class="half-line">Distance from the treadmill: ' + esc(fmtDist(r.dist)) + (t.time ? ", time " + fmtClock(t.time * 1000) : "") +
+        ' <button type="button" class="link-btn inline" data-act="tm-edit">Change</button></p>';
+    }
+    const km = ((t.ask ? t.est : r.dist) / 1000).toFixed(2), tmT = t.time || null;
+    return '<div class="panel tm-enter" id="tmEnter" role="group" aria-labelledby="tmEnterQ"><p class="status" id="tmEnterQ">What does the treadmill say?</p>' +
+      '<p class="status-note">' + (t.ask ? "We've filled in the app's estimate. Change it to the distance on the treadmill's screen, then tap Save." : "Change the distance or time, then tap Save.") + "</p>" +
+      '<div class="tm-fields"><div class="field"><label class="label" for="tmDistIn">Distance</label><span class="tm-in"><input id="tmDistIn" type="text" inputmode="decimal" autocomplete="off" value="' + km + '"><span>km</span></span></div>' +
+      '<div class="field"><span class="label" id="tmTimeLbl">Time (optional)</span><span class="tm-in" role="group" aria-labelledby="tmTimeLbl"><input id="tmMinIn" type="text" inputmode="numeric" autocomplete="off" aria-label="Minutes" placeholder="' + Math.floor((t.app || r.dur) / 60) + '"' +
+      (tmT ? ' value="' + Math.floor(tmT / 60) + '"' : "") + '><span>:</span><input id="tmSecIn" type="text" inputmode="numeric" autocomplete="off" aria-label="Seconds" placeholder="' + pad(Math.round(t.app || r.dur) % 60) + '"' +
+      (tmT ? ' value="' + pad(tmT % 60) + '"' : "") + "></span></div></div>" +
+      '<p class="err" id="tmErr"></p><button type="button" class="btn primary" data-act="tm-save">Save</button>' +
+      (t.ask ? "" : '<button type="button" class="link-btn" data-act="tm-cancel">Cancel</button>') + "</div>";
+  }
+  function tmSave() {
+    const r = ui.lastRun; if (!r || !isTm(r)) return;
+    const err = (m) => { const e = $("tmErr"); if (e) e.textContent = m; };
+    const dv = String(($("tmDistIn") || {}).value || "").trim().replace(",", "."), km = parseFloat(dv);
+    if (!/^\d*\.?\d+$/.test(dv) || !(km >= 0.1 && km <= 80)) { err("Enter the distance in km, like 5.02."); return; }
+    const mv = String(($("tmMinIn") || {}).value || "").trim(), sv = String(($("tmSecIn") || {}).value || "").trim();
+    let time = null;
+    if (mv || sv) {
+      if (!/^\d{0,3}$/.test(mv) || !/^\d{0,2}$/.test(sv) || +sv > 59) { err("Enter the time as minutes and seconds, like 27 : 31."); return; }
+      time = (+mv || 0) * 60 + (+sv || 0);
+      if (time < 60 || time > 6 * 3600) { err("That time doesn't look right. Enter minutes and seconds, or leave it empty."); return; }
+    }
+    // left as filled in: keep the estimate to the metre, not rounded to the 10 m shown
+    r.dist = r.tm.ask && dv === (r.tm.est / 1000).toFixed(2) ? r.tm.est : Math.round(km * 1000);
+    r.tm.dist = r.dist;
+    if (time) { r.dur = time; r.tm.time = time; } else { r.dur = r.tm.app != null ? r.tm.app : r.dur; delete r.tm.time; }
+    if (runKind(r) !== "intervals") r.avg = r.dist >= 100 ? r.dur / (r.dist / 1000) : null;
+    delete r.tm.ask;
+    saveRuns();
+    ui.tmEdit = false; ui.copyText = null;
+    render();
+    wkToast("Saved: " + fmtDist(r.dist) + (time ? " in " + fmtClock(time * 1000) : "") + ".", false);
+  }
+  // A treadmill run's numbers. ~ marks figures worked out from speed × time.
+  function tmDoneParts(r) {
+    const est = !!(r.tm && r.tm.ask), dist = (est ? "~" : "") + fmtDist(r.dist);
+    let stats = "", detail = "";
+    const speeds = (r.tm && Array.isArray(r.tm.speeds) ? r.tm.speeds : []).map((x) => esc(String(x[0]).toLowerCase()) + " " + fmtKmh(x[1])).join(", ");
+    if (runKind(r) === "intervals") {
+      const work = repsOf(r).find((x) => x.kmh);
+      stats = "<p>" + fmtClock(r.dur * 1000) + " · <strong>" + esc(dist) + "</strong>" + (work ? " · intervals at <strong>" + fmtKmh(work.kmh) + " km/h</strong> (~" + fmtPace(3600 / work.kmh) + "/km)" : "") + "</p>";
+      detail = '<ul class="reps">';
+      repsOf(r).forEach((x) => {
+        detail += '<li><span class="rep-main"><span>Interval ' + x.n + (x.skipped ? " (skipped)" : "") + "</span><span>~" + esc(fmtDist(x.dist)) + " · " + fmtClock(x.time * 1000) + (x.kmh ? " · " + fmtKmh(x.kmh) + " km/h" : "") + "</span></span></li>";
+      });
+      detail += "</ul>";
+    } else {
+      stats = "<p><strong>" + esc(dist) + "</strong> in <strong>" + fmtClock(r.dur * 1000) + "</strong>" + (r.avg ? " · average <strong>" + (est ? "~" : "") + fmtPace(r.avg) + "/km</strong>" : "") + "</p>";
+      if (kmsOf(r).length) detail += '<div class="km-grid">' + kmsOf(r).map((x, i) => "<div><span>Km " + (i + 1) + "</span><b>~" + fmtPace(x) + "</b></div>").join("") + "</div>";
+      if (blocksOf(r).length) { detail += '<ul class="summary">'; blocksOf(r).forEach((b) => { detail += "<li><span>" + esc(b.label) + " · ~" + fmtKm(b.dist) + (b.kmh ? " at " + fmtKmh(b.kmh) + " km/h" : "") + "</span><span>" + fmtClock(b.time * 1000) + "</span></li>"; }); detail += "</ul>"; }
+    }
+    if (speeds) stats += '<p class="half-line">Speeds: ' + speeds + " km/h</p>";
+    detail += '<p class="fine">~ = estimated from the treadmill speeds × time.' + (est ? " Enter the treadmill's distance above to replace the estimate." : "") + "</p>";
+    return { stats: stats, detail: detail };
+  }
+  function tmSummaryLines(r, lines) {
+    const est = !!(r.tm && r.tm.ask), dist = est ? "~" + fmtDist(r.dist) + " (estimated)" : fmtDist(r.dist) + " (from the treadmill)";
+    const speeds = (r.tm && Array.isArray(r.tm.speeds) ? r.tm.speeds : []).map((x) => String(x[0]).toLowerCase() + " " + fmtKmh(x[1]) + " km/h").join(", ");
+    if (runKind(r) === "intervals") {
+      lines.push("Total " + fmtClock(r.dur * 1000) + ", " + dist);
+      if (speeds) lines.push("Speeds: " + speeds);
+      repsOf(r).forEach((x) => lines.push("Interval " + x.n + (x.skipped ? " (skipped)" : "") + ": ~" + fmtDist(x.dist) + " in " + fmtClock(x.time * 1000) + (x.kmh ? " at " + fmtKmh(x.kmh) + " km/h (~" + fmtPace(3600 / x.kmh) + "/km)" : "")));
+    } else {
+      lines.push(dist + " in " + fmtClock(r.dur * 1000) + (r.avg ? ", average " + (est ? "~" : "") + fmtPace(r.avg) + "/km" : ""));
+      if (speeds) lines.push("Speeds: " + speeds);
+      if (kmsOf(r).length) lines.push("Km splits (estimated): " + kmsOf(r).map((x) => "~" + fmtPace(x)).join(", "));
+      blocksOf(r).forEach((b) => lines.push(b.label + " ~" + fmtKm(b.dist) + (b.kmh ? " at " + fmtKmh(b.kmh) + " km/h" : "") + ": " + fmtClock(b.time * 1000)));
+    }
+    lines.push("~ = estimated from treadmill speed × time");
+    return lines;
+  }
   function renderRunDone() {
     const r = ui.lastRun, route = ui.lastRoute && ui.lastRoute.id === r.date ? ui.lastRoute : null, past = ui.doneFrom === "runs", acts = ui.doneFrom === "acts";
     document.body.setAttribute("data-phase", "done");
@@ -3595,9 +4096,11 @@ void main(){
     let h = '<section class="view done" aria-labelledby="doneTitle">' + (past ? '<button type="button" class="link-btn back" data-act="back-runs">‹ Runs</button>' :
       acts ? '<button type="button" class="link-btn back" data-act="back-acts">‹ Activities</button>' : "") +
       '<h1 class="done-title" id="doneTitle">' + (r.complete ? "Done." : "Saved.") + "</h1>";
-    h += '<p class="done-meta">' + (past || acts ? esc(fmtDay(r.date)) + " · " : "") + "Week " + r.w + " · " + esc(r.title) + "</p>";
+    h += '<p class="done-meta">' + (past || acts ? esc(fmtDay(r.date)) + " · " : "") + "Week " + r.w + " · " + esc(r.title) + " · " + envHtml(r) + "</p>";
+    if (isTm(r)) h += tmEnterHtml(r);
     let stats = "", detail = "";
-    if (runKind(r) === "intervals") {
+    if (isTm(r)) { const x = tmDoneParts(r); stats = x.stats; detail = x.detail; }
+    else if (runKind(r) === "intervals") {
       let t = 0, d = 0; repsOf(r).forEach((x) => { if (x.dist >= 50) { t += x.time; d += x.dist; } });
       const z = ZONES[r.zone];
       stats = "<p>" + fmtClock(r.dur * 1000) + " · " + esc(fmtDist(r.dist)) + (d ? " · average interval pace <strong>" + fmtPace(t / (d / 1000)) + "/km</strong>" + (z ? ", target " + fmtPace(z.target) + "/km" : "") : "") + "</p>";
@@ -3620,7 +4123,7 @@ void main(){
       h += '<section class="route" aria-label="Map of your route"><div class="route-map" id="routeMap"></div>' + routeLegend(g) +
         '<p class="route-note" id="routeNote"' + (MV.note ? "" : " hidden") + ">" + (MV.note || "") + "</p>" +
         '<p class="fine">Tap ' + (runKind(r) === "intervals" ? "an interval" : "a km") + " below to show it on the map. Pinch to zoom; move the map with two fingers.</p></section>";
-    } else h += '<p class="fine">No GPS route was recorded for this run, so there is no map.</p>';
+    } else h += '<p class="fine">' + (isTm(r) ? "Treadmill run: no GPS indoors, so there is no map or GPX." : "No GPS route was recorded for this run, so there is no map.") + "</p>";
     h += detail;
     h += '<div class="done-actions"><button type="button" class="btn" data-act="copy-run">Copy summary</button>';
     if (ui.copyText) h += '<textarea class="copy-box" id="copyBox" readonly>' + esc(ui.copyText) + "</textarea>";
@@ -4568,7 +5071,8 @@ void main(){
       case "bk-go": restoreGo(); break;
       case "bk-cancel": ui.bkPend = null; dataPaint(); dataSay("Restore cancelled. Nothing was changed."); break;
       case "go-run": {
-        ui.view = "runSetup"; ui.rKind = b.getAttribute("data-k") || null; ui.rVar = b.getAttribute("data-v") || null;
+        ui.view = "runSetup"; ui.rKind = b.getAttribute("data-k") || null; ui.rVar = b.getAttribute("data-v") || null; ui.rEnv = "outdoor"; // Outdoor is the default
+
         ui.rWeek = b.getAttribute("data-w") ? +b.getAttribute("data-w") : null; ui.lastLift = null; ui.liftFrom = null; ui.copyText = null;
         startGps(); render(); break;
       }
@@ -4586,6 +5090,10 @@ void main(){
       // run setup
       case "rkind": ui.rKind = b.getAttribute("data-k"); render(); break;
       case "rvar": ui.rVar = b.getAttribute("data-v"); render(); break;
+      case "renv": ui.rEnv = b.getAttribute("data-e") === "treadmill" ? "treadmill" : "outdoor"; if (ui.rEnv === "treadmill") stopGps(); else startGps(); render(); break;
+      case "tm-save": tmSave(); break;
+      case "tm-edit": ui.tmEdit = true; render(); { const i = $("tmDistIn"); if (i) i.focus(); } break;
+      case "tm-cancel": ui.tmEdit = false; render(); break;
       case "tol": RS.tol = +b.getAttribute("data-tol"); saveRuns(); render(); break;
       case "gps": startGps(); break;
       case "test-voice-run": say("Kilometre 3. Split 5 21. Average 5 24.", true); beep(880, 0.15, 0.25); break;
@@ -4647,16 +5155,20 @@ void main(){
       const er = $("kgErr"); if (er) er.textContent = "";
     }
   });
-  app.addEventListener("keydown", (e) => { if (e.target.id === "kgInput" && e.key === "Enter") { e.preventDefault(); e.target.blur(); } });
+  app.addEventListener("keydown", (e) => {
+    if (e.target.id === "kgInput" && e.key === "Enter") { e.preventDefault(); e.target.blur(); }
+    if (/^tm(Dist|Min|Sec)In$/.test(e.target.id) && e.key === "Enter") { e.preventDefault(); tmSave(); }
+  });
   document.addEventListener("pointerdown", unlockAudio, { passive: true });
   document.addEventListener("visibilitychange", () => {
     if (document.visibilityState === "hidden") { hiddenAt = Date.now(); return; }
     const gap = hiddenAt ? Date.now() - hiddenAt : 0;
     hiddenAt = 0;
     if (R && !R.done && ui.view === "run") {
-      if (gap > 3000) say("Welcome back. The screen was off for " + spokenGap(gap) + ", so coaching paused.", true);
+      const tmRun = R.tm;
+      if (gap > 3000) say("Welcome back. The screen was off for " + spokenGap(gap) + (tmRun ? ", so some calls were missed. The timer kept going." : ", so coaching paused."), true);
       wakeCheck(); runTick();
-      if (R && !R.done && gap > 3000) { R.note = "The screen was off for " + fmtClock(gap) + ", so cues and GPS paused. Keep the screen on."; R.noteUntil = Date.now() + 60000; paintRun(Date.now()); }
+      if (R && !R.done && gap > 3000) { R.note = "The screen was off for " + fmtClock(gap) + (tmRun ? ", so some calls were missed. Keep the screen on." : ", so cues and GPS paused. Keep the screen on."); R.noteUntil = Date.now() + 60000; paintRun(Date.now()); }
     }
     if (C && ui.view === "lift") { wakeCheck(); sTick(); }
   });
