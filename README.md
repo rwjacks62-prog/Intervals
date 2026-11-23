@@ -35,3 +35,16 @@ For a run or strength session you did without the app. **Mark done** sits next t
 - It ticks off the session, counts towards the week, and shows in Activities and Recent runs marked "Manual". Open it to see its numbers, copy a summary or delete it.
 
 Saved data: no names changed. Logged sessions are saved like ones done in the app, with one new field, `src: "manual"`; strength has no sets.
+
+## Strength layout of 23 Nov (v2)
+
+From the updated programme (`claude/strength-programme.md`, action A8):
+
+- 30 s rest after every round in both sessions; the 20 s changeover inside a pair is unchanged.
+- Rounds per pair are set per session: Strength 1 is 3/2/3/2 (pairs A–D), Strength 2 is 3/3/2/2. Weeks 4, 9 and 10 do 2 rounds of every pair.
+- Strength 1: A step-up + single-arm row · B standing dumbbell shoulder press + chest-supported rear-delt row (new) · C lateral raise + incline curl · D dead bug + side plank.
+- Strength 2: A single-leg RDL + bench press · B incline press + calf raise (bench at 30°) · C incline dumbbell fly (new) + overhead triceps extension, now standing · D bird dog + side plank. Dead bug is Monday only.
+- Slowest case (top of every range): Strength 1 29:18, Strength 2 27:57; weeks 4 and 9 23:31 and 22:43.
+- The three new moves have 3D and stick figures. The stick figures for them are drawn from the front, since a side view can't show the arms going out wide.
+
+Saved data: no names changed. Logged sessions and weights carry over. Sessions started from now on have one new field, `lv: 2` (the layout). An unfinished session started before the update can't resume on the new layout: home and the Strength screen offer **Save and close** instead (Discard if nothing was logged), and its sets still count towards the next weights.

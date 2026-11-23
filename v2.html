@@ -291,7 +291,8 @@ body.wk-dragging, body.wk-dragging * { cursor: grabbing; -webkit-user-select: no
 .total { font-weight: 600; color: var(--fg-soft); }
 .plan { display: flex; flex-direction: column; gap: 1.1rem; }
 .pair { border-top: 3px solid var(--fg); padding-top: 0.35rem; }
-.pair-head { display: flex; justify-content: space-between; }
+.pair-head { display: flex; justify-content: space-between; gap: 12px; }
+.pair-head .label:last-child { white-space: nowrap; }
 .row {
   appearance: none;
   width: 100%;
@@ -624,7 +625,12 @@ const AV3D = (() => {
     // added with the 2026 programme. out as [start, end] moves the hands sideways during the rep; sup = palms forward;
     // twoHand = both hands on one dumbbell
     lat: { grip: "fwd", out: [0.07, 0.56] }, curl: { grip: "sup", out: 0.05 }, tri: { grip: "fwd", out: -0.13, twoHand: true },
-    deadbug: { grip: "fwd", out: 0.02 }, birddog: { grip: "fwd", out: 0.0 }
+    deadbug: { grip: "fwd", out: 0.02 }, birddog: { grip: "fwd", out: 0.0 },
+    // added 23 Nov 2026 (A8). elb = which way the elbows point, [forward, along the spine, out to the side] of the body,
+    // or [start, end] of the rep
+    ohp: { grip: "lat", out: [0.05, 0.19], elb: [0.3, -1, 1.1] },
+    rdrow: { grip: "lat", out: [0.02, 0.27], elb: [-0.5, 0, 1] },
+    fly: { grip: "fwd", out: [-0.09, 0.5], elb: [-0.3, -0.25, 1] }
   };
   function setAnim(a) { ANIM = Object.assign({}, a, { stand: ANIM.stand }); frames.clear(); }
 
@@ -702,7 +708,8 @@ const AV3D = (() => {
       if (to === "sh") {
         T = add(add(sj, tp), mul(l, sg * outv * S.out));
         // arc: the hand swings at a set share of the arm's length from the shoulder, so the arm stays long all through the rep
-        if (A.arc) T = add(sj, mul(norm(sub(T, sj)), 0.61 * sc * A.arc)); apole = add(pole2D(sj, T, ap.b), mul(l, sg * 0.25)); }
+        if (A.arc) T = add(sj, mul(norm(sub(T, sj)), 0.61 * sc * A.arc)); apole = add(pole2D(sj, T, ap.b), mul(l, sg * 0.25));
+        if (X.elb) { const eb = Array.isArray(X.elb[0]) ? X.elb[0].map((v, j) => lerp(v, X.elb[1][j], k)) : X.elb; apole = sum(mul(f, eb[0]), mul(u, eb[1]), mul(l, sg * eb[2])); } }
       else if (to === "hip") { T = X.side ? sum(hipC, mul(l, S.hipW + 0.1), mul(u, 0.03), mul(f, 0.03)) : add(add(hipC, tp), mul(l, sg * (S.hipW + 0.075))); apole = X.side ? add(mul(f, -1), mul(l, 0.6)) : add(pole2D(sj, T, ap.b), mul(l, sg * 0.25)); }
       else if (to === "fore") { T = [sj[0] + 0.02, 0.035, sj[2] + 0.28 * sc]; apole = [0, -1, -0.15]; }
       else if (to === "dbh") { const dbc = sum(hipC, mul(f, 0.16 * sc), mul(u, 0.03)); T = sum(dbc, mul(l, sg * 0.092), mul(f, 0.035)); apole = add(mul(l, sg), mul(u, 0.4)); if (sg > 0) sk.props.push({ t: "db", c: dbc, ax: l }); }
@@ -1463,7 +1470,7 @@ void main(){
     '<path d="M2.5 19.5h15.5l3.5-2.5"/><path d="M17.5 17.2 15.6 6.5"/><path d="M13 6.5h5.5"/><circle cx="9.2" cy="4.6" r="1.7"/><path d="M8.6 8.2 6.6 12l3.3 1.2 1 3.6M8.6 8.2l3.2 2.5 2-.6M7.3 10.6l-2.6.4"/></svg>';
   const isTm = (r) => !!(r && r.env === "treadmill");
 
-  // Strength (programme approved 16 Nov 2026: two 30-minute sessions; see claude/strength-programme.md)
+  // Strength (programme approved 16 Nov 2026, updated 23 Nov: two 30-minute sessions; see claude/strength-programme.md)
   // Each move: reps = bottom of the range, max = top. rir = reps to keep in reserve. Double progression: top of the range on every set, then +2 kg.
   // Moves from the earlier programme stay in EX (old: true) so sessions logged with them still show their names.
   const STEP = 2, READY = 15, CHANGE = 20, GO = 5, GAP = 5, WARM_SECS = 45, PAIRS = "ABCD";
@@ -1476,25 +1483,32 @@ void main(){
     "a-plank":   { name: "Side plank with top-leg lift", say: "side plank", cue: "Hips high, lift the top leg slowly", tempo: "1 s up, 2 s down", hold: 30, per: "side", load: "none", anim: "plank", swap: "Hip complaining? Drop the leg lift." },
     "b-slrdl":   { name: "Single-leg Romanian deadlift", say: "single-leg deadlift", cue: "Hips square, long back; dumbbell in the hand opposite the standing leg", tempo: "2 s down, 1 s up", reps: 8, max: 10, rir: [2, 3], per: "leg", load: "single", legs: true, anim: "slrdl", swap: "Hip or back complaining? Do hip thrusts instead." },
     "a-bench":   { name: "Dumbbell bench press", say: "bench press", cue: "Flat bench, shoulder blades pinned, feet on the floor", tempo: "2 s down, 1 s up", reps: 8, max: 12, rir: [1, 2], load: "pair", anim: "bench" },
-    "b-incline": { name: "Incline dumbbell press", say: "incline press", cue: "Bench at 30 to 45°, press up over the collarbones", tempo: "2 s down, 1 s up", reps: 8, max: 12, rir: [1, 2], load: "pair", anim: "incline" },
+    "b-incline": { name: "Incline dumbbell press", say: "incline press", cue: "Bench at 30°, press up over the collarbones", tempo: "2 s down, 1 s up", reps: 8, max: 12, rir: [1, 2], load: "pair", anim: "incline" },
     "a-calf":    { name: "Single-leg calf raise", say: "calf raise", cue: "Hold a dumbbell, or set 0 for bodyweight; full rise, slow on the way down", tempo: "1 s up, 2 s down", reps: 8, max: 12, rir: [1, 2], per: "leg", load: "single", legs: true, allowZero: true, anim: "calf" },
-    "n-tri":     { name: "Overhead triceps extension", say: "overhead triceps extension", cue: "Bench upright, back on the pad; elbows up, lower deep behind your head", tempo: "2 s down, 1 s up", reps: 10, max: 15, rir: [0, 1], load: "single", anim: "tri" },
+    "n-tri":     { name: "Overhead triceps extension", say: "overhead triceps extension", cue: "Stand tall, ribs down; elbows up, lower deep behind your head", tempo: "2 s down, 1 s up", reps: 10, max: 15, rir: [0, 1], load: "single", anim: "tri", swap: "Back complaining? Sit with the bench upright, back on the pad." },
     "n-birddog": { name: "Bird dog", say: "bird dog", cue: "Opposite arm and leg, hips level, reach long; alternate sides", tempo: "2 s out, 1 s back", reps: 10, alt: true, load: "none", anim: "birddog" },
+    // Added 23 Nov 2026 (A8)
+    "n-ohp":     { name: "Standing dumbbell shoulder press", say: "shoulder press", cue: "Ribs down, glutes tight; press up and slightly back to straight arms", tempo: "2 s down, 1 s up", reps: 8, max: 12, rir: [1, 2], load: "pair", anim: "ohp", swap: "Back complaining? Sit with the bench upright, back on the pad." },
+    "n-rdrow":   { name: "Chest-supported rear-delt row", say: "rear-delt row", cue: "Chest on the 45° bench, elbows out wide, squeeze your shoulder blades", tempo: "1 s up, 2 s down", reps: 10, max: 15, rir: [1, 2], load: "pair", anim: "rdrow" },
+    "n-fly":     { name: "Incline dumbbell fly", say: "incline fly", cue: "Bench at 30°, soft elbows; open wide to a chest stretch, then hug back up", tempo: "2 s down, 1 s up", reps: 10, max: 15, rir: [1, 2], load: "pair", anim: "fly" },
     "a-split":   { old: true, name: "Rear-foot elevated split squat", say: "split squat", cue: "Back foot on the bench", reps: 8, per: "leg", load: "pair", legs: true, anim: "split" },
     "a-rdl":     { old: true, name: "Dumbbell Romanian deadlift", say: "Romanian deadlift", cue: "Push your hips back, soft knees", reps: 10, load: "pair", legs: true, anim: "rdl" },
     "b-row":     { old: true, name: "Chest-supported row", say: "chest-supported row", cue: "Face down on the incline bench", reps: 10, max: 12, load: "pair", anim: "row2" },
     "b-thrust":  { old: true, name: "Dumbbell hip thrust", say: "hip thrust", cue: "Shoulders on the bench, dumbbell on your hips", reps: 12, load: "single", legs: true, anim: "thrust" },
     "b-march":   { old: true, name: "Suitcase march", say: "suitcase march", cue: "One heavy dumbbell, stand tall", hold: 30, per: "hand", load: "single", anim: "march" }
   };
-  // Session types stay "A" and "B" so sessions logged before the change still count for their week
+  // Session types stay "A" and "B" so sessions logged before the change still count for their week.
+  // Layout of 23 Nov 2026 (A8): 30 s rest after every round; rounds per pair set per session (see roundsFor).
+  // LAYOUT counts the layouts of this programme: sessions started on an earlier one have a lower lv (none = 1).
+  const LAYOUT = 2;
   const SESSIONS = {
     A: { name: "Strength 1", day: "Monday", focus: "Legs, shoulders, back, biceps, core",
-         pairs: [["b-step", "a-row"], ["n-lat", "n-curl"], ["n-deadbug", "a-plank"]], rest: [60, 45, 30],
-         kit: ["Flat bench", "Bench at 45°", "On the floor"],
+         pairs: [["b-step", "a-row"], ["n-ohp", "n-rdrow"], ["n-lat", "n-curl"], ["n-deadbug", "a-plank"]], rest: [30, 30, 30, 30], rounds: [3, 2, 3, 2],
+         kit: ["Flat bench", "Bench at 45°, press standing", "Bench at 45°", "On the floor"],
          warm: ["Glute bridge", "90/90 hip switches", "Cat-camel", "Arm circles"] },
     B: { name: "Strength 2", day: "Thursday", focus: "Legs, chest, triceps, core",
-         pairs: [["b-slrdl", "a-bench"], ["b-incline", "a-calf"], ["n-tri", "n-deadbug"], ["n-birddog", "a-plank"]], rest: [45, 45, 30, 30],
-         kit: ["Flat bench", "Bench at 30 to 45°", "Bench upright, then the floor", "On the floor"],
+         pairs: [["b-slrdl", "a-bench"], ["b-incline", "a-calf"], ["n-fly", "n-tri"], ["n-birddog", "a-plank"]], rest: [30, 30, 30, 30], rounds: [3, 3, 2, 2],
+         kit: ["Flat bench", "Bench at 30°", "Bench at 30°, triceps standing", "On the floor"],
          warm: ["Glute bridge", "90/90 hip switches", "Easy push-ups", "Arm circles"] }
   };
   const SWITCH = { leg: "Switch legs.", arm: "Switch arms.", side: "Switch sides.", hand: "Switch hands." };
@@ -2850,12 +2864,13 @@ void main(){
   // =====================================================================
   // Strength engine
   // =====================================================================
-  // Rounds per pair: the first two pairs do 3 (2 in lighter weeks and race week); core pairs always do 2
-  const setsFor = (pi, w) => (pi >= 2 ? 2 : (isLight(w) || w === 10) ? 2 : 3);
+  // Rounds per pair, from the session's own list (Strength 1: 3/2/3/2, Strength 2: 3/3/2/2);
+  // lighter weeks (4 and 9) and race week do 2 rounds of every pair
+  const roundsFor = (type, pi, w) => ((isLight(w) || w === 10) ? 2 : SESSIONS[type].rounds[pi]);
   function buildSets(type, w) {
     const out = [], Sx = SESSIONS[type];
     Sx.pairs.forEach((pair, pi) => {
-      const n = setsFor(pi, w);
+      const n = roundsFor(type, pi, w);
       for (let s = 1; s <= n; s++) pair.forEach((id, ei) => out.push({ ex: id, set: s, of: n, tag: PAIRS[pi] + (ei + 1), pos: ei, rest: Sx.rest[pi] }));
     });
     return out;
@@ -2878,7 +2893,7 @@ void main(){
   function sessSecs(type, w) {
     const Sx = SESSIONS[type];
     let t = Sx.warm.length * WARM_SECS + READY;
-    Sx.pairs.forEach((pair, pi) => { t += setsFor(pi, w) * (setTotal(setPlan(pair[0])) + CHANGE + setTotal(setPlan(pair[1])) + Sx.rest[pi]); });
+    Sx.pairs.forEach((pair, pi) => { t += roundsFor(type, pi, w) * (setTotal(setPlan(pair[0])) + CHANGE + setTotal(setPlan(pair[1])) + Sx.rest[pi]); });
     return t - Sx.rest[Sx.pairs.length - 1];
   }
   const sessMins = (type, w) => Math.round(sessSecs(type, w) / 60);
@@ -2972,13 +2987,21 @@ void main(){
       durationSec: Math.round(((o.paused && o.pausedAt ? o.pausedAt : Date.now()) - (o.startedAt || Date.now())) / 1000), sets: o.sets, complete: false });
     S.current = null; saveStrength();
   }
-  let C = S.current, SETS = C ? buildSets(C.type, C.week) : [], sFired = {}, sTicker = null;
+  // A session started on an earlier layout of this programme (before the 23 Nov update, A8) can't resume on the new one:
+  // its sets so far and its place in the session no longer line up. It is offered as Save and close (Discard if nothing
+  // was logged), so the sets done still count. Sessions without lv were started on layout 1.
+  const oldLayout = (c) => !!c && (c.lv || 1) < LAYOUT;
+  function oldLayoutNote(c) {
+    return "Started before the 23 Nov update, so it can't carry on with the new exercises. " +
+      (c.sets.length ? "Save and close keeps the " + c.sets.length + (c.sets.length === 1 ? " set" : " sets") + " you did." : "Nothing was logged in it.");
+  }
+  let C = S.current, SETS = C && !oldLayout(C) ? buildSets(C.type, C.week) : [], sFired = {}, sTicker = null;
   function sStart() {
     unlockAudio();
     const w = ui.sWeek || planWeek(), t = ui.sType || defaultType(w);
     const weights = {}, sug = {};
     SESSIONS[t].pairs.forEach((p) => p.forEach((id) => { const s = suggest(id, w); sug[id] = s; weights[id] = s.kg; }));
-    C = S.current = { pv: 2, id: "s" + Date.now().toString(36), type: t, week: w, startedAt: Date.now(), k: 0, phase: "warmup", wi: 0,
+    C = S.current = { pv: 2, lv: LAYOUT, id: "s" + Date.now().toString(36), type: t, week: w, startedAt: Date.now(), k: 0, phase: "warmup", wi: 0,
                       t0: Date.now(), sets: [], weights: weights, sug: sug, paused: false, leadType: null, leadDur: 0 };
     SETS = buildSets(t, w);
     saveStrength();
@@ -2995,6 +3018,7 @@ void main(){
   function sResume() {
     unlockAudio();
     if (!C) return;
+    if (oldLayout(C)) { render(); return; } // can't resume on the new layout: Save and close only
     SETS = buildSets(C.type, C.week);
     if (C.phase !== "warmup") { C.phase = "hold"; C.paused = false; }
     else { C.t0 = Date.now(); C.paused = false; sFired = {}; } // the warm-up move starts again
@@ -3117,8 +3141,11 @@ void main(){
     sSet(C.k);
   }
   function sFinish(complete, prefix) {
+    // a session from an earlier layout was left days ago, maybe: it ends at the last moment it was saved, not now
+    const end = oldLayout(C) ? Math.max(C.startedAt, C.paused && C.pausedAt ? C.pausedAt : (C.t0 || C.startedAt)) : Date.now();
     const rec = { pv: 2, id: C.id, type: C.type, week: C.week, date: new Date(C.startedAt).toISOString(),
-                  durationSec: Math.round((Date.now() - C.startedAt) / 1000), sets: C.sets, complete: !!complete };
+                  durationSec: Math.round((end - C.startedAt) / 1000), sets: C.sets, complete: !!complete };
+    if (C.lv) rec.lv = C.lv;
     if (rec.sets.length) { S.sessions.push(rec); if (S.sessions.length > 300) S.sessions = S.sessions.slice(-300); }
     S.current = null; C = null; saveStrength();
     clearInterval(sTicker); sTicker = null; releaseWake();
@@ -3181,7 +3208,7 @@ void main(){
       { hip: [120, 84], torso: -90, n: [122, 154, 8], f: [136, 120, 10], an: sh(3, 50), af: sh(-4, 48) }] },
     // Added with the 2026 programme. front2D: the stick figure is drawn from the front (a lateral raise can't be seen side on).
     // alt: alternating sides, so every other rep shows the other arm and leg.
-    lat: { tempo: [1, 2], db: ["n", "f"], front2D: true, arc: 0.95, p: [
+    lat: { tempo: [1, 2], db: ["n", "f"], front2D: true, fr: { th: [10, 84], fa: [6, 74], db: "v" }, arc: 0.95, p: [
       { hip: [120, 84], torso: -90, n: [122, 154, 8], f: [118, 154, 8], an: sh(2, 51), af: sh(2, 51) },
       { hip: [120, 84], torso: -90, n: [122, 154, 8], f: [118, 154, 8], an: sh(7, 5), af: sh(7, 5) }] },
     curl: { tempo: [1, 2], bench: [["r", 112, 118, 52, 8], ["l", 138, 126, 138, 158, 6], ["l", 125, 120, 85, 80, 9], ["l", 105, 100, 105, 158, 6]], db: ["n", "f"], p: [
@@ -3195,7 +3222,22 @@ void main(){
       { hip: [140, 151], torso: 180, n: [176, 113, -90], f: [212, 145, -70], an: sh(-50, -8), af: sh(0, -53) }] },
     birddog: { tempo: [2, 1], alt: true, arc: 0.97, db: [], p: [
       { hip: [96, 112], torso: -10, n: [60, 152, 180], f: [60, 152, 180], an: sh(0, 51), af: sh(0, 51) },
-      { hip: [96, 112], torso: -10, n: [60, 152, 180], f: [23, 106, 100], an: sh(52, -4), af: sh(0, 51) }] }
+      { hip: [96, 112], torso: -10, n: [60, 152, 180], f: [23, 106, 100], an: sh(52, -4), af: sh(0, 51) }] },
+    // Added 23 Nov 2026 (A8), 3 s a rep like the rest. All three are drawn from the front in 2D (front2D, see frontSVG),
+    // as a side view can't show the arms going out wide; p is the side view the 3D figure is built on. az: the 3D camera's
+    // angle round the figure (28° unless set).
+    // Shoulder press, standing: straight arms overhead (slightly back) down to the dumbbells at the shoulders, elbows under them
+    ohp: { tempo: [2, 1], front2D: true, fr: { th: [176, 40], fa: [178, 180], db: "h" }, db: ["n", "f"], p: [
+      { hip: [120, 84], torso: -90, n: [122, 154, 8], f: [118, 154, 8], an: sh(-2, -53), af: sh(-4, -53) },
+      { hip: [120, 84], torso: -90, n: [122, 154, 8], f: [118, 154, 8], an: sh(6, -12), af: sh(4, -12) }] },
+    // Rear-delt row: the chest-supported row (row2) on a 45° bench, with the elbows going out wide and the forearms hanging
+    rdrow: { tempo: [1, 2], az: 40, front2D: "rdrow", fr: { th: [3, 86], fa: [0, 4], db: "h" }, bench: [["l", 118, 106, 147, 77, 9], ["l", 133, 92, 133, 158, 6], ["l", 112, 158, 150, 158, 6]], db: ["n", "f"], p: [
+      { hip: [110, 100], torso: -45, n: [72, 154, 0], f: [78, 154, 0], an: sh(0, 50), af: sh(2, 50) },
+      { hip: [110, 100], torso: -45, n: [72, 154, 0], f: [78, 154, 0], an: sh(3, 25), af: sh(5, 25) }] },
+    // Incline fly on a 30° bench: arms up over the chest, opening wide and back, elbows soft. The 3D figure is seen more from the front (az).
+    fly: { tempo: [2, 1], front2D: "fly", fr: { th: [196, 82], fa: [206, 94], fs: [0.88, 1], db: "o" }, az: 62, bench: [["r", 112, 118, 52, 8], ["l", 138, 126, 138, 158, 6], ["l", 125, 120, 76, 92, 9], ["l", 105, 108, 105, 158, 6]], db: ["n", "f"], p: [
+      { hip: [130, 112], torso: -150, n: [178, 154, 5], f: [172, 154, 5], an: sh(27, -42), af: sh(25, -42) },
+      { hip: [130, 112], torso: -150, n: [178, 154, 5], f: [172, 154, 5], an: sh(0, 9), af: sh(-2, 9) }] }
   };
   const rad = (a) => a * Math.PI / 180;
   const dirv = (a) => [Math.cos(rad(a)), Math.sin(rad(a))];
@@ -3213,20 +3255,44 @@ void main(){
   const f1 = (n) => Math.round(n * 10) / 10;
   const pts = (arr) => arr.map((p) => f1(p[0]) + "," + f1(p[1])).join(" ");
   // Front-view stick figure (lateral raise): arms swing out to the sides from hanging to shoulder height
+  // Front-view stick figures, for moves a side view can't show. Each body sets its shoulders and what's drawn behind the arms;
+  // the arms swing between two angles from straight down, outwards (th: upper arm, fa: forearm), from ANIM[key].fr.
+  // Dumbbells: "v" upright bar (lateral raise), "h" across (overhand grip), "o" end on (fly: handles point at you).
+  // lat: standing, arms out to the sides. ohp: standing, straight arms overhead down to the dumbbells at the shoulders.
+  // fly: sitting back on a 30° bench, seen from your feet; arms up over the chest, together, then out wide. The reclined body
+  // looks shorter from the front. rdrow: chest on the 45° bench, seen from in front; arms hang, then the elbows go out wide.
   function frontSVG(key, k) {
-    const A = ANIM[key], line = (a, b, w, o) => '<line x1="' + f1(a[0]) + '" y1="' + f1(a[1]) + '" x2="' + f1(b[0]) + '" y2="' + f1(b[1]) + '" stroke="currentColor" stroke-width="' + w + '" stroke-linecap="round"' + (o ? ' stroke-opacity="' + o + '"' : "") + "/>";
-    const hipL = [111, 86], hipR = [129, 86], shL = [102, 38], shR = [138, 38], neck = [120, 30], head = [120, 16];
-    let s = '<line x1="2" y1="158" x2="238" y2="158" stroke="currentColor" stroke-opacity="0.3" stroke-width="2"/>';
-    s += line(hipL, [110, 121], 9) + line([110, 121], [109, 154], 9) + line(hipR, [130, 121], 9) + line([130, 121], [131, 154], 9);
-    s += line([104, 156], [114, 156], 6) + line([126, 156], [136, 156], 6);
-    s += '<polygon points="' + pts([shL, shR, hipR, hipL]) + '" fill="currentColor"/>' + line(neck, [120, 38], 7);
-    s += '<circle cx="' + head[0] + '" cy="' + head[1] + '" r="' + L.head + '" fill="currentColor"/>';
-    const th = lerp(10, 84, k), fa = lerp(6, 74, k);
+    const A = ANIM[key], body = A.front2D === true ? "stand" : A.front2D, F = A.fr || { th: [10, 84], fa: [6, 74], db: "v" };
+    const line = (a, b, w, o) => '<line x1="' + f1(a[0]) + '" y1="' + f1(a[1]) + '" x2="' + f1(b[0]) + '" y2="' + f1(b[1]) + '" stroke="currentColor" stroke-width="' + w + '" stroke-linecap="round"' + (o ? ' stroke-opacity="' + o + '"' : "") + "/>";
+    const poly = (p) => '<polygon points="' + pts(p) + '" fill="currentColor"/>', disc = (c, r) => '<circle cx="' + f1(c[0]) + '" cy="' + f1(c[1]) + '" r="' + r + '" fill="currentColor"/>';
+    const pad = (x, y, w, h) => '<rect x="' + x + '" y="' + y + '" width="' + w + '" height="' + h + '" rx="3" fill="currentColor" fill-opacity="0.28"/>';
+    let s = '<line x1="2" y1="158" x2="238" y2="158" stroke="currentColor" stroke-opacity="0.3" stroke-width="2"/>', shL, shR;
+    if (body === "fly") {
+      shL = [103, 92]; shR = [137, 92];
+      s += pad(104, 78, 32, 40) + pad(102, 117, 36, 7) + line([120, 124], [120, 157], 6, 0.28) + line([104, 157], [136, 157], 6, 0.28);
+      s += line([111, 116], [104, 126], 10) + line([104, 126], [100, 153], 9) + line([129, 116], [136, 126], 10) + line([136, 126], [140, 153], 9);
+      s += line([95, 156], [104, 156], 7) + line([136, 156], [145, 156], 7);
+      s += poly([shL, shR, [129, 116], [111, 116]]) + line([120, 84], [120, 92], 7) + disc([120, 74], L.head);
+    } else if (body === "rdrow") {
+      shL = [102, 64]; shR = [138, 64];
+      s += '<g opacity="0.42">' + line([112, 100], [109, 128], 9) + line([109, 128], [107, 153], 9) + line([128, 100], [131, 128], 9) + line([131, 128], [133, 153], 9) + "</g>";
+      s += line([120, 106], [120, 157], 6, 0.28) + line([102, 157], [138, 157], 6, 0.28);
+      s += poly([shL, shR, [130, 88], [110, 88]]) + pad(103, 76, 34, 30) + line([120, 56], [120, 64], 7) + disc([120, 46], L.head);
+    } else {
+      shL = [102, 38]; shR = [138, 38];
+      s += line([111, 86], [110, 121], 9) + line([110, 121], [109, 154], 9) + line([129, 86], [130, 121], 9) + line([130, 121], [131, 154], 9);
+      s += line([104, 156], [114, 156], 6) + line([126, 156], [136, 156], 6);
+      s += poly([shL, shR, [129, 86], [111, 86]]) + line([120, 30], [120, 38], 7) + disc([120, 16], L.head);
+    }
+    const th = lerp(F.th[0], F.th[1], k), fa = lerp(F.fa[0], F.fa[1], k), fs = F.fs ? lerp(F.fs[0], F.fs[1], k) : 1;
     [[shL, -1], [shR, 1]].forEach(([S0, sg]) => {
-      const e = [S0[0] + sg * L.ua * Math.sin(rad(th)), S0[1] + L.ua * Math.cos(rad(th))];
-      const h = [e[0] + sg * L.fa * Math.sin(rad(fa)), e[1] + L.fa * Math.cos(rad(fa))];
+      const e = [S0[0] + sg * L.ua * fs * Math.sin(rad(th)), S0[1] + L.ua * fs * Math.cos(rad(th))];
+      const h = [e[0] + sg * L.fa * fs * Math.sin(rad(fa)), e[1] + L.fa * fs * Math.cos(rad(fa))];
       s += line(S0, e, 8) + line(e, h, 8);
-      if ((A.db || []).length) s += line([h[0], h[1] - 9], [h[0], h[1] + 9], 7) + '<circle cx="' + f1(h[0]) + '" cy="' + f1(h[1]) + '" r="3" fill="var(--bg)"/>';
+      if (!(A.db || []).length) return;
+      if (F.db === "o") s += disc(h, 7) + '<circle cx="' + f1(h[0]) + '" cy="' + f1(h[1]) + '" r="2.6" fill="var(--bg)"/>';
+      else if (F.db === "h") s += line([h[0] - 9, h[1]], [h[0] + 9, h[1]], 7) + '<circle cx="' + f1(h[0]) + '" cy="' + f1(h[1]) + '" r="3" fill="var(--bg)"/>';
+      else s += line([h[0], h[1] - 9], [h[0], h[1] + 9], 7) + '<circle cx="' + f1(h[0]) + '" cy="' + f1(h[1]) + '" r="3" fill="var(--bg)"/>';
     });
     return '<svg viewBox="0 -34 240 198" role="img" aria-label="Exercise demonstration" preserveAspectRatio="xMidYMid meet">' + s + "</svg>";
   }
@@ -3318,7 +3384,7 @@ void main(){
     const sig = key + (mirror ? "m" : "") + Math.round(k * 200) + S.fig;
     if (el._sig === sig) return false;
     try {
-      FIG.draw({ pose: key, k: k, sex: S.fig, mirror: mirror, w: w, h: h });
+      FIG.draw({ pose: key, k: k, sex: S.fig, mirror: mirror, w: w, h: h, az: ANIM[key].az });
       if (!primary) { const ctx = cv.getContext("2d"); ctx.clearRect(0, 0, w, h); ctx.drawImage(g, 0, g.height - h, w, h, 0, 0, w, h); }
     } catch (e) { figFail(); return false; }
     el._sig = sig;
@@ -3654,17 +3720,22 @@ void main(){
     wkToast(msg, false);
   }
 
+  // The unfinished strength session, on home (with how many sets are done) and on the Strength screen.
+  // One from before the 23 Nov layout can only be saved and closed (see oldLayout).
+  function unfinishedHtml(count) {
+    const old = oldLayout(C), close = C.sets.length ? '<button type="button" class="btn' + (old ? " primary" : "") + '" data-act="lift-close">Save and close</button>'
+      : '<button type="button" class="btn' + (old ? " primary" : "") + '" data-act="lift-discard">Discard</button>';
+    const note = old ? oldLayoutNote(C) : count ? C.sets.length + " of " + buildSets(C.type, C.week).length + " sets done." : "";
+    return '<div class="notice"><p class="notice-title">Unfinished: ' + esc(SESSIONS[C.type].name) + "</p>" + (note ? '<p class="soft">' + esc(note) + "</p>" : "") +
+      '<div class="notice-actions">' + (old ? "" : '<button type="button" class="btn primary" data-act="lift-resume">Resume</button>') + close + "</div></div>";
+  }
   function renderHome() {
     document.body.setAttribute("data-phase", "idle");
     const pre = beforePlan(), w = homeWeek(), di = pre ? 0 : dayIndex(), sched = weekSchedule(w);
     const todayItems = pre ? [] : sched[di];
     let h = '<section class="view scroll" aria-labelledby="homeTitle">';
     h += "<header>" + homeLabel(pre, w) + '<h1 class="title" id="homeTitle">' + (pre ? "Ready" : DAYS[di]) + "</h1></header>";
-    if (C) {
-      h += '<div class="notice"><p class="notice-title">Unfinished: ' + esc(SESSIONS[C.type].name) + '</p><p class="soft">' + C.sets.length + " of " + buildSets(C.type, C.week).length +
-        ' sets done.</p><div class="notice-actions"><button type="button" class="btn primary" data-act="lift-resume">Resume</button>' +
-        (C.sets.length ? '<button type="button" class="btn" data-act="lift-close">Save and close</button>' : '<button type="button" class="btn" data-act="lift-discard">Discard</button>') + "</div></div>";
-    }
+    if (C) h += unfinishedHtml(true);
     h += '<div class="today">';
     if (pre) h += '<div class="today-item"><div><p class="what">Your plan starts on Monday</p><p class="sub">Try the tools now: check GPS and voice, and look at the strength exercises.</p></div></div>';
     todayItems.forEach((it) => {
@@ -4728,8 +4799,7 @@ void main(){
     let h = '<section class="view scroll" aria-labelledby="liftTitle">' + backLink();
     h += '<header><p class="label">Sub-41 plan · ' + shortWeek(w) + '</p><h1 class="title" id="liftTitle">' + esc(Sx.name) +
       '</h1><p class="lede">' + esc(DAYS[dT]) + " · " + esc(Sx.focus) + ". Up to " + sessMins(t, w) + " minutes with the warm-up. The voice counts every rep, tells you what's next and which weight to use.</p></header>";
-    if (C) h += '<div class="notice"><p class="notice-title">Unfinished: ' + esc(SESSIONS[C.type].name) + '</p><div class="notice-actions"><button type="button" class="btn primary" data-act="lift-resume">Resume</button>' +
-      (C.sets.length ? '<button type="button" class="btn" data-act="lift-close">Save and close</button>' : '<button type="button" class="btn" data-act="lift-discard">Discard</button>') + "</div></div>";
+    if (C) h += unfinishedHtml(false);
     let opts = "";
     for (let i = 1; i <= 10; i++) opts += '<option value="' + i + '"' + (i === w ? " selected" : "") + ">Week " + i + (isLight(i) ? " · lighter" : i === 10 ? " · race" : "") + (i === auto && !pre ? " (now)" : "") + "</option>";
     if (auto > 10) opts += '<option value="' + auto + '"' + (w === auto ? " selected" : "") + ">After the race (now)</option>";
@@ -4739,7 +4809,7 @@ void main(){
       '<div class="field"><label class="label" for="sWeekSel">Plan week</label><div class="select-wrap"><select id="sWeekSel">' + opts + "</select></div></div></div>";
     h += '<p class="week-note">' + esc(weekNote(w, t)) + '</p><div class="plan">';
     Sx.pairs.forEach((pair, pi) => {
-      const n = setsFor(pi, w);
+      const n = roundsFor(t, pi, w);
       h += '<div class="pair"><div class="pair-head"><span class="label">Pair ' + PAIRS[pi] + " · " + esc(Sx.kit[pi]) + '</span><span class="label">' + n + " rounds · " + Sx.rest[pi] + " s rest</span></div>";
       pair.forEach((id, ei) => {
         const ex = EX[id], open = ui.preview === id, rir = rirText(ex, w);
@@ -4756,7 +4826,8 @@ void main(){
       '<button type="button" class="btn small" data-act="test-voice-lift">Test voice</button></div></div>';
     h += liftHistoryHtml();
     h += '<p class="fine">Keep this page open with the screen on. If the phone locks, the count stops.</p>';
-    h += '<div class="sticky-bar">' + (C ? '<button type="button" class="btn primary wide" data-act="lift-resume">Resume ' + esc(SESSIONS[C.type].name) + "</button>"
+    h += '<div class="sticky-bar">' + (C ? (oldLayout(C) ? (C.sets.length ? '<button type="button" class="btn primary wide" data-act="lift-close">Save and close the unfinished session</button>'
+        : '<button type="button" class="btn primary wide" data-act="lift-discard">Discard the unfinished session</button>') : '<button type="button" class="btn primary wide" data-act="lift-resume">Resume ' + esc(SESSIONS[C.type].name) + "</button>")
       : (w === 10 && t === "B" ? '<button type="button" class="btn primary wide" disabled>No Strength 2 in race week</button>' : '<button type="button" class="btn primary wide" data-act="lift-start">Start ' + esc(Sx.name) + "</button>" +
         '<button type="button" class="link-btn" data-act="log-open" data-from="liftSetup" style="width:100%">Done it without the app? Mark done</button>')) + "</div></section>";
     app.innerHTML = h;
